@@ -1,0 +1,21 @@
+ecran-accueil/source/build-mac.sh
+  s_c9f43ee182844b::t_f750d6fb1bf2ff 1-18
+.gitignore
+  s_c9f43ee182844b::t_53612456fc0c6b 4-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f602d58d10371c3b9f514f7547766805e8465591",
+  "prompts": {},
+  "sessions": {
+    "s_c9f43ee182844b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5d5b0de-4b5d-42af-ba53-81d9bb3a2a08",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Franklin Tranié <franklin.tranie@gmail.com>"
+    }
+  }
+}
