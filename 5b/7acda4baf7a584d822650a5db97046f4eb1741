@@ -1,0 +1,59 @@
+ecran-accueil/source/src/tv/zenhome/PanelActivity.java
+  s_c9f43ee182844b::t_5d38b742207101 1-78
+ecran-accueil/source/res/xml/keys.xml
+  s_c9f43ee182844b::t_2b03636955183e 1-9
+ecran-accueil/source/AndroidManifest.xml
+  s_c9f43ee182844b::t_b22165044f6210 31-36
+  s_b2d08c51aad767::t_d4cd929fc68221 6-8,26-30
+ecran-accueil/source/src/tv/zenhome/Keys.java
+  s_c9f43ee182844b::t_c1b0bc35d42f4d 1-56
+ecran-accueil/source/src/tv/zenhome/Home.java
+  s_c9f43ee182844b::t_c0dd049b0716a7 898,903-916
+  s_c9f43ee182844b::t_4439f64e55f062 641
+  s_c9f43ee182844b::t_97f8b7965e2871 813-815
+  s_c9f43ee182844b::t_2528b659619fce 739,741-749,751-755,757,762,764-789,792-793,795,797-798
+  s_c9f43ee182844b::t_58e6c83b44b4d4 472
+  s_c9f43ee182844b::t_33f4e3348b15a2 353-354
+  s_c9f43ee182844b::t_32ffb991d822e8 826
+  s_c9f43ee182844b::t_9756faf7915a02 288-295,298
+  s_c9f43ee182844b::t_ca79840c843700 487-496
+  s_c9f43ee182844b::t_6da51a5586a97a 629
+  s_c9f43ee182844b::t_cd282ed809c0fb 811,816-821,823,825,827-829,831-869
+  s_c9f43ee182844b::t_dcc6cee9e205b5 885,893
+  s_c9f43ee182844b::t_fadd64de455c0a 790-791
+  s_c9f43ee182844b::t_08b60e4f361ca5 108
+  s_c9f43ee182844b::t_12fb84e304695d 450-453
+  s_c9f43ee182844b::t_73bc3ee479b02e 436
+  s_c9f43ee182844b::t_259a2c43f40e1f 330-334
+  s_c9f43ee182844b::t_805a7dbb6af47d 140
+  s_c9f43ee182844b::t_2fef246c6e9017 894-895,917-933
+ecran-accueil/source/src/tv/zenhome/SettingsPanel.java
+  s_c9f43ee182844b::t_118c784c3b229d 1-617
+  s_c9f43ee182844b::t_fc3d06d2564bea 618-634
+ecran-accueil/source/res/values/styles.xml
+  s_c9f43ee182844b::t_3710b84fae4d6f 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b7acda4baf7a584d822650a5db97046f4eb1741",
+  "prompts": {},
+  "sessions": {
+    "s_b2d08c51aad767": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3b71d9cb-ad23-4342-8873-ac415c049578",
+        "model": "abliterated-model-large-v2"
+      },
+      "human_author": "Franklin Tranié <franklin.tranie@gmail.com>"
+    },
+    "s_c9f43ee182844b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5d5b0de-4b5d-42af-ba53-81d9bb3a2a08",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Franklin Tranié <franklin.tranie@gmail.com>"
+    }
+  }
+}
