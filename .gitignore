@@ -1,3 +1,8 @@
 sauvegardes/
 outils/
 config_tv.json
+
+# Build local de Zen Home : la cle de signature ne doit jamais etre publiee
+ecran-accueil/source/key.jks
+ecran-accueil/source/out/
+.DS_Store

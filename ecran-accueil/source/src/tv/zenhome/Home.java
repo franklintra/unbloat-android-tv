@@ -105,7 +105,7 @@ public class Home extends Activity {
     int wallIdx = 0;
     LinearLayout dock;
     final List<View> overlays = new ArrayList<>();   // menus / listes ouverts (pile)
-    Typeface fReg, fMed, fLight;
+    Typeface fReg, fMed, fLight, fIcons;
     float density;
     boolean fr;
 
@@ -137,6 +137,7 @@ public class Home extends Activity {
             fMed = Typeface.createFromAsset(getAssets(), "Poppins-Medium.ttf");
             fLight = Typeface.createFromAsset(getAssets(), "Poppins-Light.ttf");
         } catch (Exception e) { fReg = fMed = fLight = Typeface.SANS_SERIF; }
+        try { fIcons = Typeface.createFromAsset(getAssets(), "MaterialIconsRound-Regular.otf"); } catch (Exception e) { fIcons = null; }
         try {
             String iv = setting("zenhome_interval");
             if (iv != null) rotationMs = Math.max(10, Integer.parseInt(iv.trim())) * 1000L;
@@ -284,8 +285,17 @@ public class Home extends Activity {
     int smallH() { return layout == 6 ? 60 : (layout == 8 ? 72 : 80); }
     int layoutHint() { return layout == 8 ? 266 : (layout == 6 ? 174 : 200); }
 
+    /** Appui long propre a une tuile du dock (ex. Reglages) ; sans entree, le menu d'edition du dock. */
+    final java.util.Map<View, Runnable> longActions = new java.util.HashMap<>();
+
+    void longPress(View f) {
+        Runnable r = longActions.get(f);
+        if (r != null) r.run(); else showTileMenu(bigTiles.indexOf(f));
+    }
+
     void buildDock(int focusIndex) {
         dock.removeAllViews();
+        longActions.clear();
         bigTiles.clear();
         int rows = layout == 8 ? 2 : 1;
         int cols = layout == 8 ? 4 : layout;
@@ -317,9 +327,11 @@ public class Home extends Activity {
         small.addView(smallTile(new GridIcon(), t("Toutes", "All apps"), new Runnable() { public void run() { showApps(null); } }));
         Drawable gear = pkgIcon("com.android.tv.settings");
         if (gear == null) gear = pkgIcon("com.android.settings");
-        small.addView(smallTile(gear, t("Réglages", "Settings"), new Runnable() { public void run() {
-            try { startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
-            catch (Exception e) { toast(t("Réglages indisponibles", "Settings unavailable")); } } }));
+        View settingsBtn = smallTile(gear, t("Réglages", "Settings"), new Runnable() { public void run() { showSettingsPanel(); } });
+        // appui long : l'appli Parametres directement, sans passer par la barre laterale
+        longActions.put(settingsBtn, new Runnable() { public void run() {
+            startSafe(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); } });
+        small.addView(settingsBtn);
         dock.addView(small);
 
         // repositionne l'indication au-dessus du dock
@@ -338,7 +350,8 @@ public class Home extends Activity {
         try {
             ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
             label = pm.getApplicationLabel(ai).toString();
-            d = pm.getApplicationBanner(ai);
+            d = customBanner(pkg);
+            if (d == null) d = pm.getApplicationBanner(ai);
             if (d == null) { Intent li = pm.getLeanbackLaunchIntentForPackage(pkg); if (li != null) d = pm.getActivityBanner(li); }
         } catch (Exception e) { return null; }
         FrameLayout f = roundedFrame(14, 0xFF1E1E1E);
@@ -420,7 +433,7 @@ public class Home extends Activity {
         l.setContentDescription(label);
         wire(l, r, 1.12f);
         l.setLongClickable(true);
-        l.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) { showTileMenu(-1); return true; } });
+        l.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) { longPress(v); return true; } });
         return l;
     }
 
@@ -434,7 +447,10 @@ public class Home extends Activity {
         return f;
     }
 
-    void wire(final View v, final Runnable r, final float scale) {
+    void wire(final View v, final Runnable r, final float scale) { wire(v, r, scale, null); }
+
+    /** label : vue affichee seulement quand v a le focus (nom sous une tuile). */
+    void wire(final View v, final Runnable r, final float scale, final View label) {
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnClickListener(new View.OnClickListener() { public void onClick(View x) {
@@ -453,6 +469,7 @@ public class Home extends Activity {
                         .setDuration(180).setInterpolator(new DecelerateInterpolator()).start();
                 int r = x.getTag() instanceof Integer ? (Integer) x.getTag() : 14;
                 x.setForeground(has ? ring(r, moveIndex >= 0 ? ACCENT : 0xF2FFFFFF) : null);
+                if (label != null) label.animate().alpha(has ? 1f : 0f).setDuration(180).start();
             }
         });
     }
@@ -465,6 +482,16 @@ public class Home extends Activity {
 
     Drawable pkgIcon(String pkg) {
         try { return getPackageManager().getApplicationIcon(pkg); } catch (Exception e) { return null; }
+    }
+
+    /** Banniere de remplacement fournie dans assets/banners/<paquet>.png (ex. logo YouTube pour SmartTube). */
+    Drawable customBanner(String pkg) {
+        try {
+            InputStream is = getAssets().open("banners/" + pkg + ".png");
+            Bitmap b = BitmapFactory.decodeStream(is);
+            is.close();
+            return b == null ? null : new BitmapDrawable(getResources(), b);
+        } catch (Exception e) { return null; }
     }
 
     String appLabel(String pkg) {
@@ -599,7 +626,7 @@ public class Home extends Activity {
                         okBurst = 0;
                         burstSwallow = true;
                         f.cancelLongPress(); f.setPressed(false);
-                        showTileMenu(bigTiles.indexOf(f));
+                        longPress(f);
                         return true;
                     }
                 }
@@ -611,7 +638,7 @@ public class Home extends Activity {
                 if (f != null && isInDock(f)) {
                     swallowOkUp = true;
                     f.cancelLongPress(); f.setPressed(false);
-                    showTileMenu(bigTiles.indexOf(f));
+                    longPress(f);
                     return true;
                 }
             }
@@ -709,36 +736,66 @@ public class Home extends Activity {
         Collections.sort(list, new java.util.Comparator<ResolveInfo>() {
             public int compare(ResolveInfo a, ResolveInfo b) { return a.loadLabel(pm).toString().compareToIgnoreCase(b.loadLabel(pm).toString()); } });
         final FrameLayout ov = new FrameLayout(this);
-        ov.setBackgroundColor(0xF0101216);
+        ov.setBackgroundColor(0xFF0B0C10);
         ov.setClickable(true);
+        // fond : la photo du moment, floutee et assombrie, facon Apple TV
+        Bitmap blur = blurredWall();
+        if (blur != null) { ImageView bgv = newWall(); bgv.setImageBitmap(blur); ov.addView(bgv); }
+        View dim = new View(this); dim.setBackgroundColor(0x99000000);
+        ov.addView(dim, new FrameLayout.LayoutParams(-1, -1));
+
+        // grille centree : tuiles 16:9, le nom n'apparait que sous la tuile choisie
+        final int cols = 6, w = 168, hh = 95, mx = 10;
+        int left = (1280 - cols * (w + 2 * mx)) / 2 + mx;
         ScrollView sv = new ScrollView(this);
-        sv.setClipChildren(false);
+        sv.setClipChildren(false); sv.setVerticalScrollBarEnabled(false);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL); col.setGravity(Gravity.CENTER_HORIZONTAL);
+        col.setClipChildren(false); col.setClipToPadding(false);
+        col.setPadding(0, dp(122), 0, dp(60));
         GridLayout g = new GridLayout(this);
-        g.setColumnCount(5);
-        g.setPadding(dp(60), dp(90), dp(60), dp(60));
+        g.setColumnCount(cols);
         g.setClipChildren(false); g.setClipToPadding(false);
         View first = null;
         for (ResolveInfo ri : list) {
             final String pkg = ri.activityInfo.packageName;
+            String label = ri.loadLabel(pm).toString();
             LinearLayout cell = new LinearLayout(this);
-            cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER);
-            Drawable ban = ri.activityInfo.loadBanner(pm);
-            if (ban == null) ban = ri.loadIcon(pm);
-            ImageView iv = new ImageView(this); iv.setImageDrawable(ban); iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            cell.addView(iv, new LinearLayout.LayoutParams(dp(150), dp(84)));
-            TextView tv = text(ri.loadLabel(pm).toString(), 11, fReg, 0xFFFFFFFF);
-            tv.setPadding(0, dp(6), 0, 0); tv.setSingleLine(true); tv.setGravity(Gravity.CENTER); tv.setEllipsize(TextUtils.TruncateAt.END);
-            cell.addView(tv, new LinearLayout.LayoutParams(dp(150), -2));
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(); lp.setMargins(dp(10), dp(10), dp(10), dp(10));
-            cell.setPadding(dp(8), dp(8), dp(8), dp(8));
-            GradientDrawable bg = new GradientDrawable(); bg.setCornerRadius(dp(14)); bg.setColor(0x14FFFFFF); cell.setBackground(bg);
-            cell.setTag(14);
-            wire(cell, new Runnable() { public void run() {
+            cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            cell.setClipChildren(false); cell.setClipToPadding(false);
+            Drawable ban = customBanner(pkg);
+            if (ban == null) ban = ri.activityInfo.loadBanner(pm);
+            FrameLayout tile = roundedFrame(12, ban != null ? 0xFF1E1E1E : 0x2EFFFFFF);
+            if (ban != null) {
+                ImageView iv = new ImageView(this); iv.setImageDrawable(ban); iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                tile.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                // pas de banniere : icone + nom dans une tuile en verre
+                LinearLayout l = new LinearLayout(this);
+                l.setOrientation(LinearLayout.VERTICAL); l.setGravity(Gravity.CENTER);
+                ImageView iv = new ImageView(this); iv.setImageDrawable(ri.loadIcon(pm));
+                LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(dp(38), dp(38)); il.gravity = Gravity.CENTER_HORIZONTAL;
+                l.addView(iv, il);
+                TextView tn = text(label, 10, fMed, 0xFFFFFFFF); tn.setShadowLayer(0, 0, 0, 0);
+                tn.setGravity(Gravity.CENTER); tn.setSingleLine(true); tn.setEllipsize(TextUtils.TruncateAt.END);
+                tn.setPadding(dp(8), dp(6), dp(8), 0);
+                l.addView(tn, new LinearLayout.LayoutParams(-1, -2));
+                tile.addView(l, new FrameLayout.LayoutParams(-1, -1));
+            }
+            cell.addView(tile, new LinearLayout.LayoutParams(dp(w), dp(hh)));
+            TextView name = text(label, 11, fMed, 0xFFFFFFFF);
+            name.setGravity(Gravity.CENTER); name.setSingleLine(true); name.setEllipsize(TextUtils.TruncateAt.END);
+            name.setPadding(0, dp(12), 0, 0); name.setAlpha(0f);
+            cell.addView(name, new LinearLayout.LayoutParams(dp(w + 2 * mx), -2));
+            // la cellule fait deja w + 2*mx de large (place du nom) : pas de marge laterale en plus
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(); lp.setMargins(0, dp(6), 0, dp(6));
+            tile.setTag(12);
+            wire(tile, new Runnable() { public void run() {
                 closeOverlay(ov, picker == null);
-                if (picker != null) picker.picked(pkg); else launch(pkg); } }, 1.08f);
+                if (picker != null) picker.picked(pkg); else launch(pkg); } }, 1.1f, name);
             if (picker == null) {
-                cell.setLongClickable(true);
-                cell.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
+                tile.setLongClickable(true);
+                tile.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
                     List<String> l = new ArrayList<>(); List<Runnable> a = new ArrayList<>();
                     l.add(t("Ouvrir", "Open")); a.add(new Runnable() { public void run() { closeOverlay(ov, false); launch(pkg); } });
                     if (!dockPkgs.contains(pkg) && dockPkgs.size() < layout) {
@@ -751,21 +808,65 @@ public class Home extends Activity {
                     showMenu(appLabel(pkg), l, a); return true; } });
             }
             g.addView(cell, lp);
-            if (first == null) first = cell;
+            if (first == null) first = tile;
         }
-        TextView hdr = text(picker == null ? t("Toutes les applications", "All apps") : t("Choisissez une appli", "Choose an app"), 22, fMed, 0xFFFFFFFF);
+        // largeur fixe : en WRAP_CONTENT, GridLayout prend toute la largeur et la grille n'est plus centree
+        col.addView(g, new LinearLayout.LayoutParams(dp(cols * (w + 2 * mx)), -2));
+        sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
+        ov.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+        // en-tete fixe ; le degrade laisse passer les tuiles dessous proprement quand on fait defiler
+        View fade = new View(this);
+        fade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0xCC000000, 0x00000000}));
+        ov.addView(fade, new FrameLayout.LayoutParams(-1, dp(118), Gravity.TOP));
+        TextView hdr = text(picker == null ? t("Applications", "Apps") : t("Choisissez une appli", "Choose an app"), 30, fLight, 0xFFFFFFFF);
         FrameLayout.LayoutParams lh = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
-        lh.setMargins(dp(70), dp(30), 0, 0);
-        if (picker == null) {
-            TextView tip = text(t("Appui long sur OK : ajouter au dock", "Long-press OK: add to dock"), 11, fReg, 0x99FFFFFF);
-            FrameLayout.LayoutParams lt = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-            lt.setMargins(0, dp(40), dp(70), 0);
-            ov.addView(tip, lt);
-        }
-        sv.addView(g);
-        ov.addView(sv, 0, new FrameLayout.LayoutParams(-1, -1));
+        lh.setMargins(dp(left), dp(44), 0, 0);
         ov.addView(hdr, lh);
+        TextView sub = text(picker == null ? list.size() + t(" applis  ·  appui long sur OK : ajouter au dock", " apps  ·  long-press OK: add to dock")
+                : t("Elle ira dans le dock", "It goes into the dock"), 11, fReg, 0x99FFFFFF);
+        FrameLayout.LayoutParams ls = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        ls.setMargins(0, dp(60), dp(left), 0);
+        ov.addView(sub, ls);
         openOverlay(ov, first);
+        g.setScaleX(0.97f); g.setScaleY(0.97f);
+        g.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(new DecelerateInterpolator()).start();
+    }
+
+    /** Photo affichee, reduite puis floutee : fond des ecrans en surimpression. */
+    Bitmap blurredWall() {
+        try {
+            Drawable d = (aOnTop ? wallA : wallB).getDrawable();   // showWall vient d'inverser aOnTop
+            if (!(d instanceof BitmapDrawable)) return null;
+            Bitmap src = ((BitmapDrawable) d).getBitmap();
+            if (src == null || src.isRecycled()) return null;
+            int w = 96, hh = Math.max(1, w * src.getHeight() / Math.max(1, src.getWidth()));
+            Bitmap small = Bitmap.createScaledBitmap(src, w, hh, true);
+            int[] px = new int[w * hh];
+            small.getPixels(px, 0, w, 0, 0, w, hh);
+            small.recycle();
+            boxBlur(px, w, hh, 3); boxBlur(px, w, hh, 3);
+            Bitmap out = Bitmap.createBitmap(w, hh, Bitmap.Config.ARGB_8888);
+            out.setPixels(px, 0, w, 0, 0, w, hh);
+            return out;
+        } catch (Throwable t) { return null; }
+    }
+
+    /** Flou par moyenne, horizontal puis vertical (sur une image de 96 px de large, le cout est negligeable). */
+    static void boxBlur(int[] px, int w, int h, int r) {
+        int[] out = new int[px.length];
+        for (int dir = 0; dir < 2; dir++) {
+            for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                int rr = 0, gg = 0, bb = 0, n = 0;
+                for (int k = -r; k <= r; k++) {
+                    int xx = dir == 0 ? Math.min(w - 1, Math.max(0, x + k)) : x;
+                    int yy = dir == 1 ? Math.min(h - 1, Math.max(0, y + k)) : y;
+                    int c = px[yy * w + xx];
+                    rr += (c >> 16) & 0xFF; gg += (c >> 8) & 0xFF; bb += c & 0xFF; n++;
+                }
+                out[y * w + x] = 0xFF000000 | ((rr / n) << 16) | ((gg / n) << 8) | (bb / n);
+            }
+            System.arraycopy(out, 0, px, 0, px.length);
+        }
     }
 
     void chooseSlotFor(final String pkg) {
@@ -781,6 +882,7 @@ public class Home extends Activity {
     void openOverlay(View ov, View focus) {
         root.addView(ov, new FrameLayout.LayoutParams(-1, -1));
         overlays.add(ov);
+        trapFocus();
         ov.setAlpha(0f); ov.animate().alpha(1f).setDuration(160).start();
         if (focus != null) focus.requestFocus();
     }
@@ -788,10 +890,45 @@ public class Home extends Activity {
     void closeOverlay(View ov, boolean refocus) {
         root.removeView(ov);
         overlays.remove(ov);
+        trapFocus();
+        View back = overlays.isEmpty() ? returnFocus : null;
+        if (overlays.isEmpty()) returnFocus = null;
         if (refocus) {
             if (!overlays.isEmpty()) overlays.get(overlays.size() - 1).requestFocus();
+            else if (back != null && back.isAttachedToWindow()) back.requestFocus();
             else focusDock();
         }
+    }
+
+    /** Seule la surimpression du dessus prend le focus : sinon les fleches partent sur des tuiles cachees dessous. */
+    void trapFocus() {
+        dock.setDescendantFocusability(overlays.isEmpty() ? ViewGroup.FOCUS_BEFORE_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        for (int i = 0; i < overlays.size(); i++) {
+            View o = overlays.get(i);
+            if (o instanceof ViewGroup) ((ViewGroup) o).setDescendantFocusability(
+                    i == overlays.size() - 1 ? ViewGroup.FOCUS_BEFORE_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        }
+    }
+
+    // ---------- Barre laterale des reglages ----------
+    View returnFocus;   // tuile qui reprend le focus quand la derniere surimpression se ferme (ex. Reglages)
+
+    /** Barre des reglages facon Google TV (classe SettingsPanel, aussi ouverte par-dessus les applis par PanelActivity).
+     *  Chaque sous-menu est une surimpression de plus : RETOUR remonte d'un niveau, trapFocus bloque le reste. */
+    void showSettingsPanel() {
+        returnFocus = getCurrentFocus();
+        new SettingsPanel(this, root, new SettingsPanel.Host() {
+            public void push(View level, View focus) { openOverlay(level, focus); }
+            public void pop() { closeTopOverlay(); }
+            public void closeAll() {
+                while (overlays.size() > 1) closeOverlay(overlays.get(overlays.size() - 1), false);
+                closeTopOverlay();
+            }
+        }).show();
+    }
+
+    void startSafe(Intent i) {
+        try { startActivity(i); } catch (Exception e) { toast(t("Impossible d'ouvrir", "Cannot open")); }
     }
 
     void closeTopOverlay() {

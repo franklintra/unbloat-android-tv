@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="tv.zenhome" android:versionCode="4" android:versionName="2.2">
+    package="tv.zenhome" android:versionCode="7" android:versionName="2.5">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="24" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:label="Zen Home" android:icon="@drawable/icon"
@@ -20,5 +23,16 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Barre des reglages par-dessus l'appli en cours (touche Reglages, ou am start -n tv.zenhome/.PanelActivity) -->
+        <activity android:name=".PanelActivity" android:theme="@style/Panel" android:exported="true"
+            android:launchMode="singleInstance" android:taskAffinity="tv.zenhome.panel"
+            android:excludeFromRecents="true" android:noHistory="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode|locale" />
+        <!-- Touche Reglages de la telecommande : court = PanelActivity, long = Parametres (activation par adb : voir Keys.java) -->
+        <service android:name=".Keys" android:label="Zen Home : touche Réglages"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/keys" />
+        </service>
     </application>
 </manifest>
