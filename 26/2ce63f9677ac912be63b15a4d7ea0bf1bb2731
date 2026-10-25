@@ -1,0 +1,36 @@
+ecran-accueil/source/src/tv/zenhome/SettingsPanel.java
+  s_02285ce7568b53::t_54126bf6284bf4 182-206,212,531,538,547,552,558,577,582
+  s_02285ce7568b53::t_b43f8c6445d179 68-70
+  s_02285ce7568b53::t_4c323600251159 366-367
+  s_02285ce7568b53::t_7166ea93544bc9 134-139,485,491,504
+  s_02285ce7568b53::t_a8f5c48cd6cf05 207-211,213-215,462-463,468-469,480-484,486-490,492-503,505,522-523,527,529-530,532-537,539-546,548-551,553-557,559-576,578-581,583
+ecran-accueil/source/src/tv/zenhome/NightShift.java
+  s_02285ce7568b53::t_483111fb8b84c4 12-17,19-21,28,30-31,34-37
+  s_02285ce7568b53::t_7e7b4f79974387 45-46,48
+  s_02285ce7568b53::t_ee7de1d5ac776f 117-118,120-122,124,129-130,134-136,144-154,156-157,161-164,167,170,178-179,181-184
+  s_02285ce7568b53::t_13ce7b62d92870 123,125-126,128,131
+  s_02285ce7568b53::t_35ec6d835ab39c 1-11,18,22-27,29,32-33,38-44,47,49-116,119,127,132-133,137-143,155,158-160,165-166,168-169,171-177,180,185-186
+ecran-accueil/source/src/tv/zenhome/Keys.java
+  s_02285ce7568b53::t_745da0260bb23e 4,6,8-11,15-16,25-28,37,39,41-42,49-57,63-102,104,109
+  s_02285ce7568b53::t_bbfbcb2d147254 103,105-108,110-116
+ecran-accueil/source/AndroidManifest.xml
+  s_02285ce7568b53::t_808aa28dafda67 3
+ecran-accueil/source/res/xml/keys.xml
+  s_02285ce7568b53::t_aa3459f566cc3c 2,4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "262ce63f9677ac912be63b15a4d7ea0bf1bb2731",
+  "prompts": {},
+  "sessions": {
+    "s_02285ce7568b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4bfcf9a7-3846-420a-9b78-66cd97963642",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Franklin Tranié <franklin.tranie@gmail.com>"
+    }
+  }
+}
