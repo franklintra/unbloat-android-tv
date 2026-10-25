@@ -65,6 +65,9 @@ class SettingsPanel {
     static final int BG = 0xFF1E2127, TXT = 0xFFE8EAED, SUB = 0xFF9AA0A6, BADGE = 0xFF30343C, ICON = 0xFFDADCE0;
     static final int F_BG = 0xFFE8EAED, F_TXT = 0xFF1F1F1F, F_SUB = 0xFF5F6368, F_BADGE = 0xFFD3E3FD, F_ICON = 0xFF0B57D0;
     static final String TCL_PKG = "com.tcl.settings", TCL_WINDOW = "com.tcl.settings.ShowWindowService";
+    // icones Material du night shift : dark_mode, light_mode, wb_twilight
+    static final String NIGHT_ICON = String.valueOf((char) 0xe51c), DAY_ICON = String.valueOf((char) 0xe518),
+            SCHEDULE_ICON = String.valueOf((char) 0xe1c6);
 
     static Typeface fReg, fMed, fIcons;
     final Activity act;
@@ -128,6 +131,12 @@ class SettingsPanel {
                 new Runnable() { public void run() { showPicture(); } }));
         else addIf(col, lv, new Intent(Settings.ACTION_DISPLAY_SETTINGS), "\ue3f4", t("Image", "Picture"), t("Mode image, luminosité", "Picture mode, brightness"));
 
+        if (tcl) {
+            final Row night = new Row(NIGHT_ICON, "Night shift", nightText(), true, null);
+            night.action = new Runnable() { public void run() { showNightShift(night); } };
+            add(col, lv, night);
+        }
+
         final Row sound = new Row("\ue050", t("Son", "Sound"), volumeText(), true, null);
         sound.action = new Runnable() { public void run() { showSound(sound); } };
         add(col, lv, sound);
@@ -169,6 +178,40 @@ class SettingsPanel {
         add(col, lv, new Row("\ue429", t("Tous les réglages d'image", "All picture settings"), t("Saturation, contraste, avancés", "Saturation, contrast, advanced"), false, tclWindow("picture")));
         enter(lv);
     }
+
+    /** Night shift (classe NightShift) : le niveau suit le soleil, les fleches le reglent a la main, OK le rend a l'automatique. */
+    void showNightShift(final Row parent) {
+        final Level lv = new Level(true);
+        LinearLayout col = panel(lv);
+        title(col, "Night shift");
+        final NightRow night = new NightRow();
+        final DayRow day = new DayRow();
+        night.onChange = day.onChange = new Runnable() { public void run() { parent.sub.setText(nightText()); } };
+        add(col, lv, night);
+        add(col, lv, day);
+        long[] e = NightShift.evening(System.currentTimeMillis());
+        long rise = NightShift.sun(java.util.Calendar.getInstance(), true);
+        if (rise < System.currentTimeMillis()) rise += 86400000L;   // a une minute pres : le lever de demain
+        add(col, lv, new Row(SCHEDULE_ICON, t("Programme", "Schedule"),
+                t("Coucher ", "Sunset ") + hm(e[0]) + t("  ·  max à ", "  ·  full at ") + hm(e[1]) + t("  ·  lever ", "  ·  sunrise ") + hm(rise), false,
+                new Runnable() { public void run() { NightShift.setAuto(act); night.update(); NightShift.apply(act); } }));
+        // le niveau automatique avance pendant que la barre est ouverte
+        lv.post(new Runnable() { public void run() {
+            if (!lv.isAttachedToWindow()) return;
+            night.update();
+            lv.postDelayed(this, 5000);
+        } });
+        enter(lv);
+    }
+
+    String nightText() {
+        int p = NightShift.level(act);
+        if (NightShift.manual(act)) return t("Manuel  ·  ", "Manual  ·  ") + p + " %";
+        if (p == 0) return t("Auto  ·  dès ", "Auto  ·  from ") + hm(NightShift.evening(System.currentTimeMillis())[0]);
+        return "Auto  ·  " + p + " %";
+    }
+
+    String hm(long ms) { return DateFormat.getTimeFormat(act).format(new Date(ms)); }
 
     void showSound(final Row parent) {
         final Level lv = new Level(true);
@@ -320,8 +363,8 @@ class SettingsPanel {
             return true;
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
-        if (r instanceof VolumeRow && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-            ((VolumeRow) r).step(code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+        if (r instanceof BarRow && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            ((BarRow) r).step(code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
             return true;
         }
         if (code == KeyEvent.KEYCODE_DPAD_LEFT && lv.sub) { back(lv); return true; }
@@ -416,16 +459,14 @@ class SettingsPanel {
         }
     }
 
-    /** Volume : fleches gauche/droite pour regler, OK pour couper le son. Agit directement (AudioManager, sans permission). */
-    class VolumeRow extends Row {
-        final AudioManager am;
+    /** Ligne a curseur : barre de progression sous le titre, fleches gauche/droite pour regler. */
+    abstract class BarRow extends Row {
         final View fill, rest;
         final GradientDrawable fillBg = new GradientDrawable(), restBg = new GradientDrawable();
         Runnable onChange;
 
-        VolumeRow(AudioManager am) {
-            super("\ue050", t("Volume", "Volume"), null, false, null);
-            this.am = am;
+        BarRow(String ic, String ttl) {
+            super(ic, ttl, null, false, null);
             LinearLayout bar = new LinearLayout(act);
             bar.setOrientation(HORIZONTAL);
             fill = new View(act); rest = new View(act);
@@ -436,6 +477,32 @@ class SettingsPanel {
             LayoutParams lb = new LayoutParams(-1, dp(4));
             lb.setMargins(0, dp(9), 0, dp(2));
             texts.addView(bar, lb);
+            paint(false);
+        }
+
+        abstract void step(int dir);
+
+        void bar(int v, int max) {
+            ((LayoutParams) fill.getLayoutParams()).weight = v;
+            ((LayoutParams) rest.getLayoutParams()).weight = max - v;
+            fill.requestLayout();
+        }
+
+        @Override void paint(boolean f) {
+            super.paint(f);
+            if (fillBg == null) return;   // appele par le constructeur de Row
+            fillBg.setColor(f ? F_ICON : TXT);
+            restBg.setColor(f ? 0xFFC4C7C5 : 0xFF3C4048);
+        }
+    }
+
+    /** Volume : fleches gauche/droite pour regler, OK pour couper le son. Agit directement (AudioManager, sans permission). */
+    class VolumeRow extends BarRow {
+        final AudioManager am;
+
+        VolumeRow(AudioManager am) {
+            super("", t("Volume", "Volume"));
+            this.am = am;
             action = new Runnable() { public void run() {
                 VolumeRow.this.am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, 0); update(); } };
             update();
@@ -452,19 +519,68 @@ class SettingsPanel {
         void update() {
             int v = am.getStreamVolume(AudioManager.STREAM_MUSIC), max = Math.max(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
             boolean m = muted();
-            ((LayoutParams) fill.getLayoutParams()).weight = m ? 0 : v;
-            ((LayoutParams) rest.getLayoutParams()).weight = m ? max : max - v;
-            fill.requestLayout();
-            icon.setText(m ? "\ue04f" : "\ue050");
+            bar(m ? 0 : v, max);
+            icon.setText(m ? "" : "");
             setEnd(m ? t("Muet", "Muted") : String.valueOf(v), false);
             if (onChange != null) onChange.run();
         }
+    }
 
-        @Override void paint(boolean f) {
-            super.paint(f);
-            if (fillBg == null) return;   // appele par le constructeur parent
-            fillBg.setColor(f ? F_ICON : TXT);
-            restBg.setColor(f ? 0xFFC4C7C5 : 0xFF3C4048);
+    /** Fenetres TCL envoyees une fois les fleches relachees : chaque envoi ouvre le curseur TCL un instant. */
+    final android.os.Handler ui = new android.os.Handler();
+    final Runnable applyNight = new Runnable() { public void run() { NightShift.apply(act); } };
+
+    void applyNightSoon(boolean veilNow) {
+        if (veilNow) Keys.veil(NightShift.veil(NightShift.level(act)));   // le voile suit tout de suite
+        ui.removeCallbacks(applyNight);
+        ui.postDelayed(applyNight, 1200);   // pas root.postDelayed : la barre peut se fermer avant
+    }
+
+    /** Niveau du night shift : suit le soleil (Auto), les fleches le reglent a la main, OK le rend a l'automatique. */
+    class NightRow extends BarRow {
+        NightRow() {
+            super(NIGHT_ICON, "Night shift");
+            action = new Runnable() { public void run() { NightShift.setAuto(act); update(); applyNightSoon(true); } };
+            update();
+        }
+
+        void step(int dir) {
+            NightShift.setManual(act, (NightShift.level(act) + 5) / 10 * 10 + dir * 10);
+            update();
+            applyNightSoon(true);
+        }
+
+        void update() {
+            int p = NightShift.level(act);
+            bar(p, 100);
+            sub.setVisibility(VISIBLE);
+            sub.setText(NightShift.manual(act) ? t("Manuel jusqu'au prochain lever ou coucher  ·  OK : auto", "Manual until next sunrise or sunset  ·  OK: auto")
+                    : t("Auto, suit le soleil  ·  flèches pour régler", "Auto, follows the sun  ·  arrows to adjust"));
+            setEnd(p + " %", false);
+            if (onChange != null) onChange.run();
+        }
+    }
+
+    /** Retroeclairage TCL hors night shift (0-100) : le point de depart de la rampe du soir. */
+    class DayRow extends BarRow {
+        DayRow() {
+            super(DAY_ICON, t("Luminosité du jour", "Daytime brightness"));
+            sub.setVisibility(VISIBLE);
+            sub.setText(t("Rétroéclairage hors night shift", "Backlight outside night shift"));
+            update();
+        }
+
+        void step(int dir) {
+            NightShift.setDay(act, NightShift.day(act) + dir * 5);
+            update();
+            applyNightSoon(false);
+        }
+
+        void update() {
+            int d = NightShift.day(act);
+            bar(d, 100);
+            setEnd(String.valueOf(d), false);
+            if (onChange != null) onChange.run();
         }
     }
 

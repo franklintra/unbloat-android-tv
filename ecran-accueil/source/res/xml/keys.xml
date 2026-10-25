@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Service Keys : filtre la touche Reglages de la telecommande, aucun autre evenement utile -->
+<!-- Service Keys : filtre la touche Reglages de la telecommande ; changements de fenetre pour le night shift (entree TV/HDMI ou applis) -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAnnouncement"
-    android:packageNames="tv.zenhome"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:canRequestFilterKeyEvents="true"
