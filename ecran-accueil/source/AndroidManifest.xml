@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="tv.zenhome" android:versionCode="11" android:versionName="2.9">
+    package="tv.zenhome" android:versionCode="16" android:versionName="2.14">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="24" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:label="Zen Home" android:icon="@drawable/icon"
@@ -29,6 +31,10 @@
             android:launchMode="singleInstance" android:taskAffinity="tv.zenhome.panel"
             android:excludeFromRecents="true" android:noHistory="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode|locale" />
+        <!-- Allume l'ecran quand un iPhone se connecte en AirPlay a la TV en veille (voir AirPlay.java) -->
+        <activity android:name=".WakeActivity" android:theme="@style/Panel" android:exported="false"
+            android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="tv.zenhome.wake"
+            android:launchMode="singleInstance" />
         <!-- Touche Reglages de la telecommande : court = PanelActivity, long = Parametres (activation par adb : voir Keys.java) -->
         <service android:name=".Keys" android:label="Zen Home : touche Réglages"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">

@@ -12,6 +12,8 @@ import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
+ * Touches Guard, Media et TCL Channel : Spotify, Apple TV et CANAL+.
+ * Porte aussi le recepteur AirPlay audio (AirPlay.java), demarre avec le service.
  * Touche Reglages de la telecommande : appui court = barre des reglages par-dessus l'appli en cours,
  * appui long = appli Parametres. Service d'accessibilite qui filtre les touches avant le systeme.
  * La telecommande TCL envoie le code 4077, pas KEYCODE_SETTINGS. Les touches injectees par adb
@@ -28,6 +30,17 @@ import android.view.accessibility.AccessibilityEvent;
 public class Keys extends AccessibilityService {
 
     static final int TCL_SETTINGS = 4077;
+
+    // touches raccourcis de la telecommande TCL (codes lus dans le logcat de TclPhoneWindowManager) -> appli lancee
+    static final int TCL_GUARD = 4140, TCL_MEDIA = 4057, TCL_CHANNEL = 4020;
+    static String shortcut(int code) {
+        switch (code) {
+            case TCL_GUARD:   return "com.spotify.tv.android";
+            case TCL_MEDIA:   return "com.apple.atve.androidtv.appletv";
+            case TCL_CHANNEL: return "com.canal.android.canal";
+            default: return null;
+        }
+    }
     static final long LONG_MS = 600, TICK_MS = 60000;
 
     static Keys self;
@@ -45,7 +58,7 @@ public class Keys extends AccessibilityService {
 
     // ecran rallume, heure ou fuseau change : on n'attend pas la minute suivante
     final BroadcastReceiver wake = new BroadcastReceiver() {
-        public void onReceive(Context c, Intent i) { h.removeCallbacks(tick); h.post(tick); }
+        public void onReceive(Context c, Intent i) { h.removeCallbacks(tick); h.post(tick); AirPlay.wake(); }
     };
 
     void open(Intent i) {
@@ -62,10 +75,12 @@ public class Keys extends AccessibilityService {
         registerReceiver(wake, f);
         NightShift.resend(this);   // apres un redemarrage, on ne sait pas ce que la TV a garde
         h.post(tick);
+        AirPlay.start(this);   // recepteur AirPlay audio, voir AirPlay.java
     }
 
     @Override
     public void onDestroy() {
+        AirPlay.stop();
         h.removeCallbacksAndMessages(null);
         try { unregisterReceiver(wake); } catch (Exception ignored) { }
         if (self == this) self = null;
@@ -87,6 +102,15 @@ public class Keys extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
         int c = e.getKeyCode();
+        String pkg = shortcut(c);
+        if (pkg != null) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
+                if (i == null) i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i != null) open(i);
+            }
+            return true;   // la TV ne lance plus son propre raccourci
+        }
         if (c != TCL_SETTINGS && c != KeyEvent.KEYCODE_SETTINGS) return false;
         if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
             longFired = false;
