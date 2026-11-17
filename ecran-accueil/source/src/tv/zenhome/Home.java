@@ -128,6 +128,10 @@ public class Home extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // Android 11 lit le theme pour savoir si l'accueil masque l'appli d'en dessous. Juste apres une mise a jour
+        // de Zen Home, cette lecture peut echouer : l'accueil passe pour transparent, l'appli quittee n'est jamais
+        // arretee et son calque reste coince au-dessus (HOME "ne marche plus"). On le declare opaque nous-memes.
+        if (Build.VERSION.SDK_INT >= 30) setTranslucent(false);
         fr = "fr".equals(Locale.getDefault().getLanguage());
         prefs = getSharedPreferences("zenhome", MODE_PRIVATE);
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
