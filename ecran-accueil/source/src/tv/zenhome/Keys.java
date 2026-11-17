@@ -58,7 +58,11 @@ public class Keys extends AccessibilityService {
 
     // ecran rallume, heure ou fuseau change : on n'attend pas la minute suivante
     final BroadcastReceiver wake = new BroadcastReceiver() {
-        public void onReceive(Context c, Intent i) { h.removeCallbacks(tick); h.post(tick); AirPlay.wake(); }
+        public void onReceive(Context c, Intent i) {
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) { AudioOnly.onScreenOff(c); return; }
+            if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) AudioOnly.onScreenOn(c);
+            h.removeCallbacks(tick); h.post(tick); AirPlay.wake(); Mirror.reannounceIfRunning();
+        }
     };
 
     void open(Intent i) {
@@ -72,15 +76,19 @@ public class Keys extends AccessibilityService {
         IntentFilter f = new IntentFilter(Intent.ACTION_SCREEN_ON);
         f.addAction(Intent.ACTION_TIME_CHANGED);
         f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        f.addAction(Intent.ACTION_SCREEN_OFF);
         registerReceiver(wake, f);
+        AudioOnly.restoreTimeout(this);   // si la TV a ete coupee pendant une mise en veille AirPlay
         NightShift.resend(this);   // apres un redemarrage, on ne sait pas ce que la TV a garde
         h.post(tick);
         AirPlay.start(this);   // recepteur AirPlay audio, voir AirPlay.java
+        Mirror.start(this);    // recopie d'ecran et video AirPlay, voir Mirror.java
     }
 
     @Override
     public void onDestroy() {
         AirPlay.stop();
+        Mirror.stop();
         h.removeCallbacksAndMessages(null);
         try { unregisterReceiver(wake); } catch (Exception ignored) { }
         if (self == this) self = null;
@@ -101,6 +109,7 @@ public class Keys extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
         int c = e.getKeyCode();
         String pkg = shortcut(c);
         if (pkg != null) {

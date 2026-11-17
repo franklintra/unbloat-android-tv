@@ -12,7 +12,9 @@ javac --release 8 -nowarn -cp "$SDK" -d out/classes $(find src -name '*.java')
 "$BT/d8" --release --min-api 21 --lib "$SDK" --output out $(find out/classes -name '*.class')
 "$BT/aapt" package -f -M AndroidManifest.xml -S res -A assets -I "$SDK" -F out/unsigned.apk
 (cd out && "$BT/aapt" add unsigned.apk classes.dex >/dev/null)
-"$BT/zipalign" -f 4 out/unsigned.apk out/aligned.apk
+# AirPlay video (../native/build-native.sh)
+[ -f lib/armeabi-v7a/libzenairplay.so ] && "$BT/aapt" add out/unsigned.apk lib/armeabi-v7a/libzenairplay.so >/dev/null
+"$BT/zipalign" -f -p 4 out/unsigned.apk out/aligned.apk
 [ -f key.jks ] || keytool -genkeypair -keystore key.jks -storepass changeit -keypass changeit -alias k -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZenHome" >/dev/null
 "$BT/apksigner" sign --ks key.jks --ks-pass pass:changeit --out out/ZenHome.apk out/aligned.apk
 echo "OK : out/ZenHome.apk"

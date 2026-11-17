@@ -85,6 +85,7 @@ final class AirPlay {
     }
     static synchronized void stop() { if (instance != null) { instance.end(); instance = null; } }
     static synchronized void wake() { if (instance != null) instance.reannounce(); }
+    static synchronized boolean busy() { return instance != null && instance.current != null; }
 
     AirPlay(Context c) {
         ctx = c;
@@ -373,7 +374,8 @@ final class AirPlay {
         try {
             PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
             if (pm.isInteractive()) return;
-            Log.i(TAG, "TV en veille : on l'allume");
+            Log.i(TAG, "TV en veille : on l'allume, ecran eteint (AudioOnly)");
+            AudioOnly.arm(ctx);
             ctx.startActivity(new android.content.Intent(ctx, WakeActivity.class)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION));
         } catch (Exception e) {
@@ -386,7 +388,10 @@ final class AirPlay {
      * Il pilote le vrai volume de la TV (STREAM_MUSIC, 0..100 sur cette TCL), comme une enceinte AirPlay :
      * le curseur de l'iPhone et la telecommande reglent la meme chose. La piste AirPlay reste a gain 1.
      */
-    void setVolume(float v) {
+    void setVolume(float v) { tvVolume(ctx, v); }
+
+    /** Partage avec Mirror (AirPlay video) : volume AirPlay en dB -> volume TV. */
+    static void tvVolume(Context ctx, float v) {
         try {
             AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
             int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
@@ -560,6 +565,7 @@ final class AirPlay {
         void record() {
             if (recording) return;
             recording = true;
+            AudioOnly.sessionStarted();
             try {
                 PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
                 // l'ecran reste allume pendant la lecture : sinon la mise en veille auto de la TV coupe le Wi-Fi,
@@ -598,6 +604,7 @@ final class AirPlay {
             try { if (wake != null && wake.isHeld()) wake.release(); } catch (Exception ignored) { }
             try { if (wifi != null && wifi.isHeld()) wifi.release(); } catch (Exception ignored) { }
             try { if (am != null) am.abandonAudioFocus(focus); } catch (Exception ignored) { }
+            AudioOnly.sessionEnded();
             Log.i(TAG, "session terminee");
         }
 

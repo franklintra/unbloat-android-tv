@@ -29,3 +29,17 @@ The 19 photos bundled with Zen Home come from Wikimedia Commons ("Featured pictu
 Licences : [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) · [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 
 Police / Font : Poppins (Indian Type Foundry), [SIL Open Font License 1.1](https://openfontlicense.org).
+
+## AirPlay vidéo / AirPlay video
+
+`ecran-accueil/source/lib/armeabi-v7a/libzenairplay.so` est compilée par `ecran-accueil/native/build-native.sh` à partir de :
+
+| Composant | Licence | Source |
+|---|---|---|
+| UxPlay (commit 48f5ce4) | GPL-3.0 | [github.com/FDH2/UxPlay](https://github.com/FDH2/UxPlay) |
+| libplist (commit b3f14c2) | LGPL-2.1 | [github.com/libimobiledevice/libplist](https://github.com/libimobiledevice/libplist) |
+| OpenSSL 3.0 (commit e9e85dd) | Apache-2.0 | [github.com/openssl/openssl](https://github.com/openssl/openssl) |
+
+La glue `ecran-accueil/native/zenairplay.c` est sous GPL-3.0 et `dnssd_android.c` sous LGPL-2.1. Comme UxPlay est sous GPL-3.0, `libzenairplay.so` et tout `ZenHome.apk` qui la contient sont distribués sous GPL-3.0. Le reste du dépôt reste sous licence MIT.
+
+The AirPlay video library and any ZenHome.apk that contains it are GPL-3.0, because they link UxPlay. The rest of the repository stays MIT.

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="tv.zenhome" android:versionCode="16" android:versionName="2.14">
+    package="tv.zenhome" android:versionCode="19" android:versionName="2.17">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="24" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- AudioOnly : rendort la TV apres la musique AirPlay (adb shell pm grant tv.zenhome android.permission.WRITE_SECURE_SETTINGS) -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:label="Zen Home" android:icon="@drawable/icon"
@@ -35,6 +37,11 @@
         <activity android:name=".WakeActivity" android:theme="@style/Panel" android:exported="false"
             android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="tv.zenhome.wake"
             android:launchMode="singleInstance" />
+        <!-- Recopie d'ecran et video AirPlay plein ecran (voir Mirror.java) -->
+        <activity android:name=".MirrorActivity" android:exported="false"
+            android:launchMode="singleTask" android:taskAffinity="tv.zenhome.mirror"
+            android:excludeFromRecents="true" android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode|locale" />
         <!-- Touche Reglages de la telecommande : court = PanelActivity, long = Parametres (activation par adb : voir Keys.java) -->
         <service android:name=".Keys" android:label="Zen Home : touche Réglages"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">

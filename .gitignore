@@ -6,3 +6,7 @@ config_tv.json
 ecran-accueil/source/key.jks
 ecran-accueil/source/out/
 .DS_Store
+
+# AirPlay video : sources clonees et build par ecran-accueil/native/build-native.sh
+ecran-accueil/native/third_party/
+ecran-accueil/native/build/
