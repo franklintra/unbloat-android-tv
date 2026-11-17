@@ -530,8 +530,7 @@ class SettingsPanel {
     final android.os.Handler ui = new android.os.Handler();
     final Runnable applyNight = new Runnable() { public void run() { NightShift.apply(act); } };
 
-    void applyNightSoon(boolean veilNow) {
-        if (veilNow) Keys.veil(NightShift.veil(NightShift.level(act)));   // le voile suit tout de suite
+    void applyNightSoon() {
         ui.removeCallbacks(applyNight);
         ui.postDelayed(applyNight, 1200);   // pas root.postDelayed : la barre peut se fermer avant
     }
@@ -540,14 +539,14 @@ class SettingsPanel {
     class NightRow extends BarRow {
         NightRow() {
             super(NIGHT_ICON, "Night shift");
-            action = new Runnable() { public void run() { NightShift.setAuto(act); update(); applyNightSoon(true); } };
+            action = new Runnable() { public void run() { NightShift.setAuto(act); update(); applyNightSoon(); } };
             update();
         }
 
         void step(int dir) {
             NightShift.setManual(act, (NightShift.level(act) + 5) / 10 * 10 + dir * 10);
             update();
-            applyNightSoon(true);
+            applyNightSoon();
         }
 
         void update() {
@@ -573,7 +572,7 @@ class SettingsPanel {
         void step(int dir) {
             NightShift.setDay(act, NightShift.day(act) + dir * 5);
             update();
-            applyNightSoon(false);
+            applyNightSoon();
         }
 
         void update() {

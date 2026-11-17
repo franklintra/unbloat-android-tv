@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.PowerManager;
+import android.provider.Settings;
 
 import java.util.Calendar;
 import java.util.TimeZone;
@@ -12,7 +13,8 @@ import java.util.TimeZone;
  * Night shift : du coucher du soleil a 1 h du matin. Sur le premier quart de la soiree, la TV chute vite :
  * retroeclairage du jour a 10, temperature de couleur TCL de 0 a -5 (son "chaud" d'usine). Ensuite elle continue
  * plus lentement jusqu'a 1 h : retroeclairage de 10 a 1, et la balance des blancs 2 points retire du bleu et
- * un peu de vert. Dans la deuxieme moitie, un voile noir (Keys.veil) assombrit encore l'image.
+ * un peu de vert. Passe la moitie de la rampe, un second etage assombrit encore en ecrivant screen_brightness
+ * (voir screenBrightness) : c'est ce qui passe sous le plancher du chemin graphic des applis.
  * Tout revient au jour au lever du soleil. Heures du soleil calculees sur la TV (formules NOAA) pour
  * Neuilly-sur-Seine, sans reseau.
  *
@@ -29,7 +31,7 @@ final class NightShift {
     static final int WARMEST = -5;                   // curseur TCL : -5 chaud ... 0 normal ... +5 froid
     static final int KNEE_LIGHT = 10, NIGHT_LIGHT = 1;   // retroeclairage au quart de la rampe, puis a 1 h
     static final int BLUE_CUT = -30, GREEN_CUT = -15;    // gains 2 points a 1 h (curseurs TCL -30 ... +30)
-    static final int VEIL_MAX = 70;                  // voile noir a 100 %, en % d'opacite
+    static final int SBR_FLOOR = 10;                 // plancher de screen_brightness : la TV borne en dessous de 10
     static final String TCL_PKG = "com.tcl.settings", TCL_WINDOW = "com.tcl.settings.ShowWindowService";
     // ces curseurs sont caches dans le menu TCL : on les vise par le nom de leur classe, qui marche aussi
     static final String TCL_VM = "com.tcl.settings.viewmodel.picture.";
@@ -134,13 +136,27 @@ final class NightShift {
     /** Gain 2 points : 0 jusqu'au quart, puis vers cut a 1 h, par pas de 5 pour limiter les fenetres TCL. */
     static int gain(int cut, int p) { return Math.round(cut * late(p) / 5f) * 5; }
 
-    /** Voile noir : seulement dans la deuxieme moitie, quand le retroeclairage approche de son minimum. */
-    static int veil(int p) { return p <= 50 ? 0 : Math.round(VEIL_MAX * (p - 50) / 50f); }
+    /**
+     * Second etage, sous le curseur TCL : screen_brightness (1-255) multiplie la sortie du chemin graphic
+     * (255 = neutre). Il ne sert qu'a partir de la moitie de la rampe, de 255 a SBR_FLOOR a 1 h. En dessous
+     * de 10 la TV borne elle-meme, donc SBR_FLOOR = 10 : c'est le plancher atteignable sans root.
+     */
+    static int screenBrightness(int p) {
+        if (p <= 50) return 255;
+        return Math.round(255 - (255 - SBR_FLOOR) * (p - 50) / 50f);
+    }
+
+    /** Ecrit screen_brightness si la valeur a change (aucune fenetre TCL ouverte, rien a refermer). */
+    static void applyScreenBrightness(Context c, int value) {
+        try {
+            if (Settings.System.getInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS) == value) return;
+            Settings.System.putInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, value);
+        } catch (Exception ignored) { }   // WRITE_SETTINGS non accorde : la seconde etage reste neutre
+    }
 
     /** Applique le niveau en cours. Appele chaque minute par Keys, et par la barre des reglages. */
     static void apply(Context c) {
         int p = level(c);
-        Keys.veil(veil(p));
         PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
         if (pm != null && !pm.isInteractive()) return;   // en veille
         send(c, "sentTwoPoints", 1, TWO_POINTS, tclText(c, "open", "Marche"));   // les gains n'agissent qu'avec 2 points
@@ -148,6 +164,7 @@ final class NightShift {
         send(c, "sentBacklight", backlight(day(c), p), "picture_brightness", null);
         send(c, "sentBlue", gain(BLUE_CUT, p), BLUE_GAIN, null);
         send(c, "sentGreen", gain(GREEN_CUT, p), GREEN_GAIN, null);
+        applyScreenBrightness(c, screenBrightness(p));
     }
 
     /** Envoie un reglage s'il a change depuis le dernier envoi ; text remplace la valeur pour une liste (Marche/Arret). */

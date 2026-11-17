@@ -6,14 +6,9 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.graphics.Color;
-import android.graphics.PixelFormat;
-import android.os.Build;
 import android.os.Handler;
 import android.provider.Settings;
 import android.view.KeyEvent;
-import android.view.View;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
@@ -22,8 +17,7 @@ import android.view.accessibility.AccessibilityEvent;
  * La telecommande TCL envoie le code 4077, pas KEYCODE_SETTINGS. Les touches injectees par adb
  * ne passent pas par ce filtre : seule la vraie telecommande permet de tester.
  *
- * Le service tourne tant que la TV est allumee : il porte aussi le night shift (NightShift.apply chaque minute)
- * et son voile noir, une fenetre d'accessibilite qui passe au-dessus de toutes les applis, video comprise.
+ * Le service tourne tant que la TV est allumee : il porte aussi le night shift (NightShift.apply chaque minute).
  * Il ecoute les changements de fenetre pour savoir quand on passe d'une appli a une entree TV/HDMI.
  *
  * Activation, une fois, par adb (l'ordre compte : TCL refuse de lier le service sans APP_AUTO_START) :
@@ -39,7 +33,6 @@ public class Keys extends AccessibilityService {
     static Keys self;
     final Handler h = new Handler();
     boolean longFired, onTvInput;
-    View veil;
 
     // le filtre ne recoit pas les repetitions : l'appui long se detecte au minuteur, touche encore enfoncee
     final Runnable longPress = new Runnable() {
@@ -75,33 +68,8 @@ public class Keys extends AccessibilityService {
     public void onDestroy() {
         h.removeCallbacksAndMessages(null);
         try { unregisterReceiver(wake); } catch (Exception ignored) { }
-        setVeil(0);
         if (self == this) self = null;
         super.onDestroy();
-    }
-
-    /** Opacite du voile noir, 0 a 100 ; sans effet si le service ne tourne pas. */
-    static void veil(int pct) { if (self != null) self.setVeil(pct); }
-
-    void setVeil(int pct) {
-        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        if (pct <= 0 || Build.VERSION.SDK_INT < 22) {
-            if (veil != null) wm.removeView(veil);
-            veil = null;
-            return;
-        }
-        if (veil == null) {
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    PixelFormat.TRANSLUCENT);
-            lp.setTitle("NightShiftVeil");
-            veil = new View(this);
-            wm.addView(veil, lp);
-        }
-        veil.setBackgroundColor(Color.argb(Math.round(255 * Math.min(100, pct) / 100f), 0, 0, 0));
     }
 
     /** Entree TV/HDMI (appli com.tcl.tv) ou applis : chacune garde son propre retroeclairage, on renvoie tout au passage. */
