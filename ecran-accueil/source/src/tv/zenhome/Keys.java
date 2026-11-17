@@ -110,7 +110,7 @@ public class Keys extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
-        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getKeyCode() != KeyEvent.KEYCODE_POWER) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
+        if (e.getAction() == KeyEvent.ACTION_DOWN) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
         int c = e.getKeyCode();
         String pkg = shortcut(c);
         if (pkg != null) {

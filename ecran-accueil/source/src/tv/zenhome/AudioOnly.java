@@ -8,6 +8,7 @@ import android.media.AudioPlaybackConfiguration;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -38,12 +39,13 @@ final class AudioOnly {
 
     static final String TAG = "ZenAirPlay";
     static final String SLEEP_TIMEOUT = "sleep_timeout";   // Settings.Secure, cache dans le SDK
-    static final long GRACE_MS = 60_000, SLEEP_TIMEOUT_MS = 5_000, ARM_MS = 20_000, SETTLE_MS = 2_000;
+    static final long GRACE_MS = 60_000, SLEEP_TIMEOUT_MS = 5_000, ARM_MS = 20_000, SETTLE_MS = 2_000, AGAIN_MS = 30_000;
 
     static final Handler h = new Handler(Looper.getMainLooper());
     static Context ctx;
     static boolean armed;   // AirPlay vient de reveiller la TV : ecran a eteindre des qu'il s'allume
     static boolean dark;    // retroeclairage coupe par nous, personne n'a encore touche la telecommande
+    static long lastOff = -AGAIN_MS;   // dernier SCREEN_OFF (elapsedRealtime)
 
     static final Runnable disarm = new Runnable() { public void run() { armed = false; } };
     static final Runnable goDark = new Runnable() {
@@ -98,20 +100,40 @@ final class AudioOnly {
     /** Keys, ACTION_SCREEN_OFF : la TV dort, on rend la main a TCL pour le prochain reveil. */
     static void onScreenOff(Context c) {
         ctx = c.getApplicationContext();
-        boolean wasDark = dark;
-        armed = false;
+        long now = SystemClock.elapsedRealtime();
+        boolean again = now - lastOff < AGAIN_MS;
+        lastOff = now;
+        // Marche pendant la musique : on garde le son et on coupe seulement l'image. La touche est traitee avant
+        // l'accessibilite (impossible a bloquer) et la veille rapide (STR) suit SCREEN_OFF de ~4 s : on rallume
+        // tout de suite, en mode Audio seul. Deux appuis a moins de AGAIN_MS eteignent vraiment la TV.
+        // (En Audio seul, Marche rallume d'abord l'image, comme toute touche TCL.)
+        // Juste apres SCREEN_OFF, TCL finit sa mise en veille et ignore le premier reveil (WakeActivity mise en
+        // pause) : on reessaie pendant 2 s. Si la STR passe quand meme, Mirror.Music rallume au paquet suivant.
+        boolean music = Mirror.Music.active || appMusic || AirPlay.busy();
+        h.removeCallbacks(rewake);
+        if (music && !again) {
+            Log.i(TAG, "Marche pendant la musique : image coupee, le son continue");
+            AirPlay.wakeScreen(ctx);
+            for (long d = 500; d <= 2000; d += 500) h.postDelayed(rewake, d);
+        } else if (music) {
+            Log.i(TAG, "Marche deux fois : la TV s'eteint");
+            offUntil = now + OFF_MS;
+        }
         h.removeCallbacks(goDark);
         h.removeCallbacks(sleep);
         dark = false;
         restoreTimeout(c);
-        // Marche pendant la musique, image allumee : on garde le son et on coupe seulement l'image. La veille
-        // rapide (STR) ne commence que ~20 s apres SCREEN_OFF, on rallume donc tout de suite en mode Audio seul.
-        // Un second appui, image deja coupee, eteint vraiment la TV.
-        if (!wasDark && (Mirror.Music.active || appMusic || AirPlay.busy())) {
-            Log.i(TAG, "Marche pendant la musique : image coupee, le son continue");
-            AirPlay.wakeScreen(ctx);
-        }
     }
+
+    static final long OFF_MS = 120_000;
+    static volatile long offUntil;   // eteinte expres pendant la musique : pas de reveil automatique avant
+
+    static final Runnable rewake = new Runnable() {
+        public void run() { if (SystemClock.elapsedRealtime() >= offUntil) AirPlay.wakeScreen(ctx); }
+    };
+
+    /** Mirror.Music, paquet son recu TV en veille (STR reveillee par le Wi-Fi) : on rallume, sauf extinction voulue. */
+    static boolean mayWake() { return SystemClock.elapsedRealtime() >= offUntil; }
 
     /** Keys.onKeyEvent : la telecommande sert, TCL rallume l'image ; on ne rendormira pas la TV. */
     static void onKey() {

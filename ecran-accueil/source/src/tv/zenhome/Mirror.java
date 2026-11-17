@@ -260,15 +260,30 @@ final class Mirror {
             if (usingScreen) end(); else begin();
         }
 
+        static volatile long lastCheck, lastWake;
+        static PowerManager pm;
+
         static void packet() {
-            last = SystemClock.uptimeMillis();
-            if (!active && !screen) begin();
+            long now = SystemClock.uptimeMillis();
+            last = now;
+            if (screen) return;
+            if (!active) { if (AudioOnly.mayWake()) begin(); return; }
+            // TV passee en veille rapide pendant la musique (Marche, reveil manque) : le paquet l'a sortie de
+            // veille sans ecran, on la rallume en Audio seul
+            if (now - lastCheck < 1000) return;
+            lastCheck = now;
+            if (pm == null) pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (pm.isInteractive() || now - lastWake < 5000 || !AudioOnly.mayWake()) return;
+            lastWake = now;
+            Log.i(TAG, "enceinte : TV en veille pendant la musique, on la rallume");
+            AirPlay.wakeScreen(ctx);
         }
 
         static synchronized void begin() {
             last = SystemClock.uptimeMillis();
             if (active) return;
             active = true;
+            lastWake = last;
             Log.i(TAG, "enceinte : lecture");
             AudioOnly.sessionStarted();
             AirPlay.wakeScreen(ctx);   // TV en veille : allumee en mode Audio seul

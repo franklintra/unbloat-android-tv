@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="tv.zenhome" android:versionCode="22" android:versionName="2.20">
+    package="tv.zenhome" android:versionCode="24" android:versionName="2.22">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="24" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
