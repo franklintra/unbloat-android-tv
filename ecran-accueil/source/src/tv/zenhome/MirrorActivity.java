@@ -10,14 +10,18 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 /**
- * Ecran de l'AirPlay video : une SurfaceView plein ecran, sur fond noir.
+ * Ecran de l'AirPlay video : une SurfaceView centree sur fond noir, au format de la video, la plus grande
+ * possible (bandes noires plutot qu'image deformee). Le decodeur et MediaPlayer etirent l'image a la taille
+ * de la Surface : c'est donc la taille de la vue qui garde le format.
  * - recopie d'ecran : la Surface va au decodeur de Mirror.Video
  * - video des applis : un MediaPlayer lit la liste HLS servie par UxPlay sur localhost
  * Ouverte par Mirror (rallume la TV si elle dort), fermee a la fin de la session. Retour la ferme.
@@ -26,6 +30,9 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
 
     static final String TAG = Mirror.TAG;
     static MirrorActivity current;
+    static int videoW, videoH;   // taille utile de la video en cours, 0 = inconnue
+
+    FrameLayout root;
 
     SurfaceView view;
     SurfaceHolder holder;
@@ -68,14 +75,47 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
         if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true); }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         view = new SurfaceView(this);
         root.addView(view, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
+                FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+        root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                if (r - l != or - ol || b - t != ob - ot) fit();
+            }
+        });
         setContentView(root);
         view.getHolder().addCallback(this);
         h.post(poll);
+    }
+
+    /** Nouvelle taille de video (recopie : image decodee ; appli : MediaPlayer). Appelable de tout thread. */
+    static void videoSize(final int w, final int h) {
+        if (w <= 0 || h <= 0) return;
+        Mirror.main.post(new Runnable() {
+            public void run() {
+                if (w == videoW && h == videoH) return;
+                videoW = w; videoH = h;
+                if (current != null) current.fit();
+            }
+        });
+    }
+
+    /** Plus grand rectangle au format de la video qui tient dans l'ecran, centre. */
+    void fit() {
+        int sw = root.getWidth(), sh = root.getHeight();
+        if (sw <= 0 || sh <= 0) return;
+        int w = sw, h = sh;
+        if (videoW > 0 && videoH > 0) {
+            if ((long) videoW * sh > (long) videoH * sw) h = (int) Math.round((double) sw * videoH / videoW);   // bandes en haut et en bas
+            else w = (int) Math.round((double) sh * videoW / videoH);                                         // bandes a gauche et a droite
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) view.getLayoutParams();
+        if (lp.width == w && lp.height == h) return;
+        lp.width = w; lp.height = h; lp.gravity = Gravity.CENTER;
+        view.setLayoutParams(lp);
+        Log.i(TAG, "video " + videoW + "x" + videoH + " affichee en " + w + "x" + h + " sur " + sw + "x" + sh);
     }
 
     @Override
@@ -126,6 +166,9 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
             p.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build());
             p.setDisplay(holder);
+            p.setOnVideoSizeChangedListener(new MediaPlayer.OnVideoSizeChangedListener() {
+                public void onVideoSizeChanged(MediaPlayer mp, int w, int hgt) { if (player == mp) videoSize(w, hgt); }
+            });
             p.setDataSource(url);
             p.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
                 public void onPrepared(MediaPlayer mp) {

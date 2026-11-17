@@ -19,7 +19,6 @@ import android.view.Surface;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -34,7 +33,8 @@ import java.util.Locale;
  * - video des applis : UxPlay sert une liste HLS sur localhost -> MediaPlayer dans MirrorActivity
  *
  * Annonce Bonjour _airplay._tcp par NsdManager, avec les TXT construits par UxPlay (native/dnssd_android.c).
- * Nom distinct de l'enceinte AirPlay.java ("Chambre Franklin", port 5000) : "TV Chambre Franklin", port 7000.
+ * Meme nom et meme adresse materielle que l'enceinte AirPlay.java (_raop._tcp, port 5000) : iOS ne montre qu'un
+ * appareil "Chambre Franklin". Le son seul va a AirPlay.java, la video et la recopie ici (port 7000).
  * Meme code que l'enceinte (pref airplay/password, 1234).
  */
 final class Mirror {
@@ -69,13 +69,9 @@ final class Mirror {
             return;
         }
         SharedPreferences p = ctx.getSharedPreferences("airplay", Context.MODE_PRIVATE);
-        String h = p.getString("mirror_hw", null);
-        if (h == null) {
-            byte[] r = new byte[6]; new SecureRandom().nextBytes(r);
-            r[0] = (byte) ((r[0] & 0xfc) | 0x02);   // adresse locale, unicast
-            h = AirPlay.hex(r); p.edit().putString("mirror_hw", h).apply();
-        }
-        name = p.getString("mirror_name", "TV Chambre Franklin");
+        // meme adresse et meme nom que l'enceinte AirPlay.java : iOS fusionne _raop et _airplay en un seul appareil
+        String h = AirPlay.hwPref(p);
+        name = AirPlay.namePref(p);
         String pw = p.getString("password", "1234");
         String key = new File(ctx.getFilesDir(), "airplay-mirror.pem").getPath();   // cle d'appairage gardee
         port = nativeStart(name, AirPlay.unhex(h), key, pw, 1920, 1080, 30, true, false);
@@ -153,6 +149,7 @@ final class Mirror {
         Log.i(TAG, "recopie " + (h265 ? "H.265 " : "H.264 ") + w + "x" + h + " (source " + ws + "x" + hs + ")");
         Hls.stop();
         Video.format(h265, w, h);
+        MirrorActivity.videoSize(w, h);
         MirrorActivity.show(ctx);
         return 0;
     }
@@ -288,8 +285,18 @@ final class Mirror {
                 try {
                     int o = c.dequeueOutputBuffer(bi, 20_000);
                     if (o >= 0) c.releaseOutputBuffer(o, true);   // affichage immediat : latence minimale
+                    else if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) outputFormat(c.getOutputFormat());
                 } catch (Exception e) { return; }
             }
+        }
+
+        /** Taille utile de l'image decodee (sans les marges d'alignement) : l'ecran garde ce format. */
+        static void outputFormat(MediaFormat f) {
+            int w = f.getInteger(MediaFormat.KEY_WIDTH), h = f.getInteger(MediaFormat.KEY_HEIGHT);
+            if (f.containsKey("crop-right") && f.containsKey("crop-left")) w = f.getInteger("crop-right") - f.getInteger("crop-left") + 1;
+            if (f.containsKey("crop-bottom") && f.containsKey("crop-top")) h = f.getInteger("crop-bottom") - f.getInteger("crop-top") + 1;
+            Log.i(TAG, "image decodee " + w + "x" + h);
+            MirrorActivity.videoSize(w, h);
         }
 
         /** NAL de parametres en tete du paquet : SPS (H.264 type 7) ou VPS (H.265 type 32). */

@@ -90,14 +90,8 @@ final class AirPlay {
     AirPlay(Context c) {
         ctx = c;
         SharedPreferences p = c.getSharedPreferences("airplay", Context.MODE_PRIVATE);
-        String h = p.getString("hw", null);
-        if (h == null) {
-            byte[] r = new byte[6]; new SecureRandom().nextBytes(r);
-            r[0] = (byte) ((r[0] & 0xfc) | 0x02);   // adresse locale, unicast
-            h = hex(r); p.edit().putString("hw", h).apply();
-        }
-        hw = unhex(h);
-        name = p.getString("name", "Chambre Franklin");
+        hw = unhex(hwPref(p));
+        name = namePref(p);
         String pw = p.getString("password", "1234");   // code AirPlay ; chaine vide = pas de code
         password = pw.isEmpty() ? null : pw;
     }
@@ -481,6 +475,19 @@ final class AirPlay {
         while (s.length() % 4 != 0) s += "=";
         return Base64.decode(s, Base64.DEFAULT);
     }
+
+    /** Adresse materielle annoncee, partagee avec Mirror (_airplay._tcp) pour ne former qu'un appareil sur iOS. */
+    static synchronized String hwPref(SharedPreferences p) {
+        String h = p.getString("hw", null);
+        if (h == null) {
+            byte[] r = new byte[6]; new SecureRandom().nextBytes(r);
+            r[0] = (byte) ((r[0] & 0xfc) | 0x02);   // adresse locale, unicast
+            h = hex(r); p.edit().putString("hw", h).commit();
+        }
+        return h;
+    }
+
+    static String namePref(SharedPreferences p) { return p.getString("name", "Chambre Franklin"); }
 
     static String hex(byte[] b) { StringBuilder s = new StringBuilder(); for (byte x : b) s.append(String.format("%02x", x)); return s.toString(); }
     static byte[] unhex(String s) { byte[] b = new byte[s.length() / 2]; for (int i = 0; i < b.length; i++) b[i] = (byte) Integer.parseInt(s.substring(2 * i, 2 * i + 2), 16); return b; }
