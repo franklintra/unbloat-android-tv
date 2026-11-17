@@ -10,10 +10,12 @@ import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Surface;
 
@@ -32,10 +34,12 @@ import java.util.Locale;
  * - son : AAC-ELD (recopie), AAC-LC -> MediaCodec, ALAC -> Alac.java, puis AudioTrack
  * - video des applis : UxPlay sert une liste HLS sur localhost -> MediaPlayer dans MirrorActivity
  *
- * Annonce Bonjour _airplay._tcp par NsdManager, avec les TXT construits par UxPlay (native/dnssd_android.c).
- * Meme nom et meme adresse materielle que l'enceinte AirPlay.java (_raop._tcp, port 5000) : iOS ne montre qu'un
- * appareil "Chambre Franklin". Le son seul va a AirPlay.java, la video et la recopie ici (port 7000).
- * Meme code que l'enceinte (pref airplay/password, 1234).
+ * Annonce Bonjour _airplay._tcp et _raop._tcp par NsdManager, les deux sur le port 7000, avec les TXT construits
+ * par UxPlay (native/dnssd_android.c), comme UxPlay lui-meme : iOS ne montre qu'un appareil "Chambre Franklin".
+ * Le son seul arrive donc ici aussi (Music) : un iPhone qui voit l'annonce _airplay parle AirPlay 2 (GET /info,
+ * fp-setup) meme au port de l'enceinte, ce que AirPlay.java (AirPlay 1) ne sait pas faire. AirPlay.java ne sert
+ * plus que de repli si libzenairplay.so ne demarre pas.
+ * Code AirPlay : pref airplay/password, 1234.
  */
 final class Mirror {
 
@@ -53,7 +57,7 @@ final class Mirror {
     static String name;
     static int port;
     static NsdManager nsd;
-    static NsdManager.RegistrationListener reg;
+    static NsdManager.RegistrationListener reg, regRaop;
     static PowerManager.WakeLock connLock;
     static final Handler main = new Handler(Looper.getMainLooper());
 
@@ -88,19 +92,29 @@ final class Mirror {
         if (port > 0) { nativeStop(); port = 0; }
         Video.release();
         Audio.stop();
+        Music.end();
     }
+
+    static synchronized boolean running() { return port > 0; }
 
     static synchronized void reannounce() { unregister(); register(); }
     static synchronized void reannounceIfRunning() { if (port > 0) reannounce(); }
 
     static synchronized void register() {
-        if (port <= 0 || reg != null) return;
+        if (port <= 0) return;
         if (nsd == null) nsd = (NsdManager) ctx.getSystemService(Context.NSD_SERVICE);
+        if (reg == null) reg = announce(name, "_airplay._tcp", 1);
+        if (regRaop == null) regRaop = announce(nativeRaopName(), "_raop._tcp", 0);
+    }
+
+    /** service 1 = _airplay._tcp, 0 = _raop._tcp ("ADRESSE@nom") ; TXT en format DNS, construits par UxPlay */
+    static NsdManager.RegistrationListener announce(String serviceName, String type, final int service) {
+        if (serviceName == null) return null;
         NsdServiceInfo si = new NsdServiceInfo();
-        si.setServiceName(name);
-        si.setServiceType("_airplay._tcp");
+        si.setServiceName(serviceName);
+        si.setServiceType(type);
         si.setPort(port);
-        byte[] txt = nativeTxt(1);
+        byte[] txt = nativeTxt(service);
         for (int i = 0; txt != null && i < txt.length; ) {
             int n = txt[i++] & 0xff;
             String kv = new String(txt, i, Math.min(n, txt.length - i), java.nio.charset.StandardCharsets.UTF_8);
@@ -108,20 +122,24 @@ final class Mirror {
             int eq = kv.indexOf('=');
             if (eq > 0) si.setAttribute(kv.substring(0, eq), kv.substring(eq + 1));
         }
-        reg = new NsdManager.RegistrationListener() {
-            public void onServiceRegistered(NsdServiceInfo i) { Log.i(TAG, "annonce : " + i.getServiceName()); }
-            public void onRegistrationFailed(NsdServiceInfo i, int err) { Log.w(TAG, "annonce refusee " + err); synchronized (Mirror.class) { reg = null; } }
+        NsdManager.RegistrationListener l = new NsdManager.RegistrationListener() {
+            public void onServiceRegistered(NsdServiceInfo i) { Log.i(TAG, "annonce : " + i.getServiceName() + " " + i.getServiceType()); }
+            public void onRegistrationFailed(NsdServiceInfo i, int err) {
+                Log.w(TAG, "annonce refusee " + err);
+                synchronized (Mirror.class) { if (service == 1) reg = null; else regRaop = null; }
+            }
             public void onServiceUnregistered(NsdServiceInfo i) { }
             public void onUnregistrationFailed(NsdServiceInfo i, int err) { }
         };
-        try { nsd.registerService(si, NsdManager.PROTOCOL_DNS_SD, reg); }
-        catch (Exception e) { Log.w(TAG, "annonce", e); reg = null; }
+        try { nsd.registerService(si, NsdManager.PROTOCOL_DNS_SD, l); return l; }
+        catch (Exception e) { Log.w(TAG, "annonce " + type, e); return null; }
     }
 
     static synchronized void unregister() {
-        if (reg == null) return;
-        try { nsd.unregisterService(reg); } catch (Exception ignored) { }
+        for (NsdManager.RegistrationListener l : new NsdManager.RegistrationListener[]{reg, regRaop})
+            if (l != null) try { nsd.unregisterService(l); } catch (Exception ignored) { }
         reg = null;
+        regRaop = null;
     }
 
     // ------------------------------------------------------------------ rappels d'UxPlay (threads natifs)
@@ -133,6 +151,7 @@ final class Mirror {
             if (connLock.isHeld()) connLock.release();
             Video.release();
             Audio.stop();
+            Music.end();
             Hls.stop();
             MirrorActivity.close();
         }
@@ -187,9 +206,10 @@ final class Mirror {
     static void onAudioFormat(int ct, int spf, boolean usingScreen, boolean isMedia) {
         Log.i(TAG, "son ct=" + ct + " spf=" + spf + (usingScreen ? " recopie" : "") + (isMedia ? " media" : ""));
         Audio.start(ct, spf);
+        Music.format(usingScreen);
     }
 
-    static void onAudio(ByteBuffer b, int ct, long ntpRemote, long ntpLocal, int seq) { Audio.feed(b, ct); }
+    static void onAudio(ByteBuffer b, int ct, long ntpRemote, long ntpLocal, int seq) { Music.packet(); Audio.feed(b, ct); }
     static void onAudioFlush() { Audio.flush(); }
 
     static void onVolume(float db) { AirPlay.tvVolume(ctx, db); }
@@ -206,6 +226,78 @@ final class Mirror {
     static void onHlsStop() { Hls.stop(); MirrorActivity.close(); }
     static double[] onHlsInfo() { return Hls.info(); }
     static float onHlsRemove() { Hls.rate(0); return (float) Hls.position; }
+
+    // ------------------------------------------------------------------ son seul (enceinte)
+
+    /**
+     * Musique envoyee a l'enceinte "Chambre Franklin" (pas de recopie d'ecran). Reprend ce que faisait la session
+     * d'AirPlay.java : reveil de la TV en veille en mode Audio seul TCL (AudioOnly), verrous ecran et Wi-Fi pour
+     * que la mise en veille auto ne coupe pas le son, focus audio, puis remise en veille apres la musique.
+     * UxPlay ne signale pas la fin du flux son (TEARDOWN type 96, et iOS garde la connexion) : on la deduit
+     * de IDLE_MS sans paquet ; un paquet apres une pause relance la session.
+     */
+    static final class Music {
+        static final long IDLE_MS = 8_000;
+        static volatile boolean active, screen;
+        static volatile long last;
+        static PowerManager.WakeLock wake;
+        static WifiManager.WifiLock wifi;
+        static AudioManager am;
+        static final AudioManager.OnAudioFocusChangeListener focus = new AudioManager.OnAudioFocusChangeListener() {
+            public void onAudioFocusChange(int f) { }
+        };
+        static final Runnable idle = new Runnable() {
+            public void run() {
+                if (!active) return;
+                long quiet = SystemClock.uptimeMillis() - last;
+                if (quiet >= IDLE_MS) end(); else main.postDelayed(this, IDLE_MS - quiet + 200);
+            }
+        };
+
+        /** Format du flux son : celui de la recopie d'ecran (usingScreen) n'est pas de la musique. */
+        static void format(boolean usingScreen) {
+            screen = usingScreen;
+            if (usingScreen) end(); else begin();
+        }
+
+        static void packet() {
+            last = SystemClock.uptimeMillis();
+            if (!active && !screen) begin();
+        }
+
+        static synchronized void begin() {
+            last = SystemClock.uptimeMillis();
+            if (active) return;
+            active = true;
+            Log.i(TAG, "enceinte : lecture");
+            AudioOnly.sessionStarted();
+            AirPlay.wakeScreen(ctx);   // TV en veille : allumee en mode Audio seul
+            try {
+                PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+                wake = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | PowerManager.ON_AFTER_RELEASE, "zenhome:airplay");
+                wake.acquire();
+                WifiManager wm = (WifiManager) ctx.getSystemService(Context.WIFI_SERVICE);
+                wifi = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "zenhome:airplay");
+                wifi.acquire();
+                am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                am.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+            } catch (Exception e) { Log.w(TAG, "verrous", e); }
+            main.removeCallbacks(idle);
+            main.postDelayed(idle, IDLE_MS);
+        }
+
+        static synchronized void end() {
+            main.removeCallbacks(idle);
+            if (!active) return;
+            active = false;
+            try { if (wake != null && wake.isHeld()) wake.release(); } catch (Exception ignored) { }
+            try { if (wifi != null && wifi.isHeld()) wifi.release(); } catch (Exception ignored) { }
+            try { if (am != null) am.abandonAudioFocus(focus); } catch (Exception ignored) { }
+            wake = null; wifi = null;
+            AudioOnly.sessionEnded();
+            Log.i(TAG, "enceinte : fin de la musique");
+        }
+    }
 
     // ------------------------------------------------------------------ recopie d'ecran
 

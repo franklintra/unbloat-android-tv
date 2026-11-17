@@ -51,7 +51,7 @@ final class AudioOnly {
     };
     static final Runnable sleep = new Runnable() {
         public void run() {
-            if (!dark || AirPlay.busy()) return;
+            if (!dark || AirPlay.busy() || Mirror.Music.active) return;
             Log.i(TAG, "audio seul : fin de la musique, la TV se rendort");
             SharedPreferences p = prefs();
             try {

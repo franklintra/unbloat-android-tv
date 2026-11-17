@@ -81,8 +81,8 @@ public class Keys extends AccessibilityService {
         AudioOnly.restoreTimeout(this);   // si la TV a ete coupee pendant une mise en veille AirPlay
         NightShift.resend(this);   // apres un redemarrage, on ne sait pas ce que la TV a garde
         h.post(tick);
-        AirPlay.start(this);   // recepteur AirPlay audio, voir AirPlay.java
-        Mirror.start(this);    // recopie d'ecran et video AirPlay, voir Mirror.java
+        Mirror.start(this);    // AirPlay (son, video, recopie d'ecran) par UxPlay, voir Mirror.java
+        if (!Mirror.running()) AirPlay.start(this);   // repli : enceinte AirPlay 1 seule, voir AirPlay.java
     }
 
     @Override

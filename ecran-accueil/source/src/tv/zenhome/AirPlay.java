@@ -364,7 +364,10 @@ final class AirPlay {
     }
 
     /** TV en veille rapide : on l'allume (ecran, image et son TCL) ; si l'ecran est deja allume, on ne touche a rien. */
-    void wakeScreen() {
+    void wakeScreen() { wakeScreen(ctx); }
+
+    /** Partage avec Mirror (son seul via UxPlay). */
+    static void wakeScreen(Context ctx) {
         try {
             PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
             if (pm.isInteractive()) return;
