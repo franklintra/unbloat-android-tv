@@ -31,7 +31,7 @@ final class NightShift {
     static final int WARMEST = -5;                   // curseur TCL : -5 chaud ... 0 normal ... +5 froid
     static final int KNEE_LIGHT = 10, NIGHT_LIGHT = 1;   // retroeclairage au quart de la rampe, puis a 1 h
     static final int BLUE_CUT = -30, GREEN_CUT = -15;    // gains 2 points a 1 h (curseurs TCL -30 ... +30)
-    static final int SBR_FLOOR = 10;                 // plancher de screen_brightness : la TV borne en dessous de 10
+    static final float FLOAT_FLOOR = 0.02f;          // plancher du HAL lights (0x0a) ; en dessous la TV borne
     static final String TCL_PKG = "com.tcl.settings", TCL_WINDOW = "com.tcl.settings.ShowWindowService";
     // ces curseurs sont caches dans le menu TCL : on les vise par le nom de leur classe, qui marche aussi
     static final String TCL_VM = "com.tcl.settings.viewmodel.picture.";
@@ -137,20 +137,22 @@ final class NightShift {
     static int gain(int cut, int p) { return Math.round(cut * late(p) / 5f) * 5; }
 
     /**
-     * Second etage, sous le curseur TCL : screen_brightness (1-255) multiplie la sortie du chemin graphic
-     * (255 = neutre). Il ne sert qu'a partir de la moitie de la rampe, de 255 a SBR_FLOOR a 1 h. En dessous
-     * de 10 la TV borne elle-meme, donc SBR_FLOOR = 10 : c'est le plancher atteignable sans root.
+     * Second etage, sous le curseur TCL : screen_brightness_float (1.0 = plein) alimente le HAL lights, dont
+     * le plancher 0x0a est 2,6 fois plus bas que celui du chemin graphic des applis (26/255). L'entier
+     * screen_brightness est ecarte expres : la fenetre TCL le resynchronise sur l'index du curseur a chaque
+     * ouverture, donc il ne tient pas. Il ne sert qu'a partir de la moitie de la rampe.
      */
-    static int screenBrightness(int p) {
-        if (p <= 50) return 255;
-        return Math.round(255 - (255 - SBR_FLOOR) * (p - 50) / 50f);
+    static float screenBrightnessFloat(int p) {
+        if (p <= 50) return 1f;
+        return 1f - (1f - FLOAT_FLOOR) * (p - 50) / 50f;
     }
 
-    /** Ecrit screen_brightness si la valeur a change (aucune fenetre TCL ouverte, rien a refermer). */
-    static void applyScreenBrightness(Context c, int value) {
+    /** Ecrit screen_brightness_float si la valeur a change (aucune fenetre TCL ouverte, rien a refermer). */
+    static void applyScreenBrightnessFloat(Context c, float value) {
         try {
-            if (Settings.System.getInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS) == value) return;
-            Settings.System.putInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, value);
+            float now = Settings.System.getFloat(c.getContentResolver(), "screen_brightness_float", -1f);
+            if (Math.abs(now - value) < 0.004f) return;
+            Settings.System.putFloat(c.getContentResolver(), "screen_brightness_float", value);
         } catch (Exception ignored) { }   // WRITE_SETTINGS non accorde : la seconde etage reste neutre
     }
 
@@ -164,7 +166,7 @@ final class NightShift {
         send(c, "sentBacklight", backlight(day(c), p), "picture_brightness", null);
         send(c, "sentBlue", gain(BLUE_CUT, p), BLUE_GAIN, null);
         send(c, "sentGreen", gain(GREEN_CUT, p), GREEN_GAIN, null);
-        applyScreenBrightness(c, screenBrightness(p));
+        applyScreenBrightnessFloat(c, screenBrightnessFloat(p));
     }
 
     /** Envoie un reglage s'il a change depuis le dernier envoi ; text remplace la valeur pour une liste (Marche/Arret). */
