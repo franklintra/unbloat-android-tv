@@ -3,10 +3,15 @@ package tv.zenhome;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.media.AudioManager;
+import android.media.AudioPlaybackConfiguration;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+
+import java.util.List;
 
 /**
  * Musique AirPlay ecran eteint, avec le mode "Audio seul" de TCL.
@@ -51,7 +56,7 @@ final class AudioOnly {
     };
     static final Runnable sleep = new Runnable() {
         public void run() {
-            if (!dark || AirPlay.busy() || Mirror.Music.active) return;
+            if (!dark || AirPlay.busy() || Mirror.Music.active || appMusic) return;
             Log.i(TAG, "audio seul : fin de la musique, la TV se rendort");
             SharedPreferences p = prefs();
             try {
@@ -93,11 +98,19 @@ final class AudioOnly {
     /** Keys, ACTION_SCREEN_OFF : la TV dort, on rend la main a TCL pour le prochain reveil. */
     static void onScreenOff(Context c) {
         ctx = c.getApplicationContext();
+        boolean wasDark = dark;
         armed = false;
         h.removeCallbacks(goDark);
         h.removeCallbacks(sleep);
         dark = false;
         restoreTimeout(c);
+        // Marche pendant la musique, image allumee : on garde le son et on coupe seulement l'image. La veille
+        // rapide (STR) ne commence que ~20 s apres SCREEN_OFF, on rallume donc tout de suite en mode Audio seul.
+        // Un second appui, image deja coupee, eteint vraiment la TV.
+        if (!wasDark && (Mirror.Music.active || appMusic || AirPlay.busy())) {
+            Log.i(TAG, "Marche pendant la musique : image coupee, le son continue");
+            AirPlay.wakeScreen(ctx);
+        }
     }
 
     /** Keys.onKeyEvent : la telecommande sert, TCL rallume l'image ; on ne rendormira pas la TV. */
@@ -113,6 +126,48 @@ final class AudioOnly {
 
     static void sessionStarted() { h.removeCallbacks(sleep); if (ctx != null) restoreTimeout(ctx); }
     static void sessionEnded() { h.removeCallbacks(sleep); if (dark) h.postDelayed(sleep, GRACE_MS); }
+
+    // ---- musique d'une autre appli (Spotify Connect...) lancee pendant la veille
+
+    static AudioManager.AudioPlaybackCallback playback;
+    static boolean appMusic;   // une appli (pas l'AirPlay de Zen Home) joue de la musique
+
+    static final Runnable checkPlayback = new Runnable() {
+        public void run() {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            boolean on = am.isMusicActive() && !Mirror.Music.active && !AirPlay.busy();
+            if (on == appMusic) return;
+            appMusic = on;
+            if (on) {
+                Log.i(TAG, "musique d'une appli");
+                sessionStarted();
+                AirPlay.wakeScreen(ctx);   // TV en veille (Spotify Connect) : allumee en mode Audio seul
+            } else {
+                Log.i(TAG, "fin de la musique d'une appli");
+                sessionEnded();
+            }
+        }
+    };
+
+    /**
+     * Keys.onServiceConnected. Spotify Connect (enceinte "Franklin") joue dans l'appli Spotify de la TV : si on
+     * l'envoie sur la TV en veille, l'appli demarre le son mais rien n'allume la TV. On ecoute donc les lectures
+     * de toutes les applis et on reveille la TV comme pour AirPlay. Il faut aussi sortir Spotify de Doze, sinon
+     * il ne recoit rien en veille : adb shell dumpsys deviceidle whitelist +com.spotify.tv.android
+     */
+    static void watchPlayback(Context c) {
+        ctx = c.getApplicationContext();
+        if (playback != null || Build.VERSION.SDK_INT < 26) return;
+        playback = new AudioManager.AudioPlaybackCallback() {
+            @Override public void onPlaybackConfigChanged(List<AudioPlaybackConfiguration> l) {
+                h.removeCallbacks(checkPlayback);
+                h.post(checkPlayback);
+                h.postDelayed(checkPlayback, 1500);   // isMusicActive suit l'arret de la piste avec retard
+            }
+        };
+        try { ((AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE)).registerAudioPlaybackCallback(playback, h); }
+        catch (Exception e) { Log.w(TAG, "suivi des lectures", e); playback = null; }
+    }
 
     /** Remet le delai de veille d'origine, s'il a ete baisse. */
     static void restoreTimeout(Context c) {

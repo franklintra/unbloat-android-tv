@@ -79,6 +79,7 @@ public class Keys extends AccessibilityService {
         f.addAction(Intent.ACTION_SCREEN_OFF);
         registerReceiver(wake, f);
         AudioOnly.restoreTimeout(this);   // si la TV a ete coupee pendant une mise en veille AirPlay
+        AudioOnly.watchPlayback(this);    // Spotify Connect et autres applis : la musique reveille la TV
         NightShift.resend(this);   // apres un redemarrage, on ne sait pas ce que la TV a garde
         h.post(tick);
         Mirror.start(this);    // AirPlay (son, video, recopie d'ecran) par UxPlay, voir Mirror.java
@@ -109,7 +110,7 @@ public class Keys extends AccessibilityService {
 
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
-        if (e.getAction() == KeyEvent.ACTION_DOWN) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getKeyCode() != KeyEvent.KEYCODE_POWER) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
         int c = e.getKeyCode();
         String pkg = shortcut(c);
         if (pkg != null) {
