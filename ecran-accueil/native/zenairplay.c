@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/system_properties.h>
 
 #include "raop.h"
 #include "dnssd.h"
@@ -44,6 +45,7 @@ static jmethodID m_log, m_conn, m_reset, m_client, m_vfmt, m_video, m_afmt, m_au
 static raop_t *raop;
 static dnssd_t *dnssd;
 static char password[64];
+static char lang_system[64];   /* garde la chaine : airplay_video la lit a chaque video */
 static bool hls;
 static volatile double current_volume;
 static volatile int open_connections, missed_feedback, reset_httpd;
@@ -375,6 +377,19 @@ JNIEXPORT jint JNICALL Java_tv_zenhome_Mirror_nativeStart(JNIEnv *e, jclass c, j
     if (height) raop_set_plist(raop, "height", height);
     if (fps) { raop_set_plist(raop, "refreshRate", fps); raop_set_plist(raop, "maxFPS", fps); }
     if (hls) raop_set_plist(raop, "hls", 1);
+    if (hls) {
+        /* Langues de la TV pour l'AirPlay video (pistes audio et sous-titres HLS). UxPlay les lit dans LANGUAGE
+           ou LANG, absentes sur Android : sans elles, lang_system reste NULL et la premiere liste maitre YouTube
+           qui decrit ses langues fait planter select_master_playlist_language (strlen(NULL)). */
+        char loc[PROP_VALUE_MAX] = "";
+        __system_property_get("persist.sys.locale", loc);
+        if (!loc[0]) __system_property_get("ro.product.locale", loc);
+        char *dash = strchr(loc, '-');
+        if (dash) snprintf(lang_system, sizeof(lang_system), "%s:%.*s:en", loc, (int) (dash - loc), loc);
+        else snprintf(lang_system, sizeof(lang_system), "%s%sen", loc, loc[0] ? ":" : "");
+        raop_set_lang(raop, NULL, NULL, lang_system);
+        __android_log_print(ANDROID_LOG_INFO, TAG, "langues HLS : %s", lang_system);
+    }
 
     unsigned short tcp[3] = {0, 7000, 0}, udp[3] = {0, 0, 0};   /* {mirror data (dynamic), AirPlay} */
     raop_set_tcp_ports(raop, tcp);
