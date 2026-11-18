@@ -9,7 +9,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
@@ -39,12 +38,11 @@ final class QuickDock {
 
     int dp(float v) { return Math.round(v * density); }
 
-    String[] packages() {
-        String csv = act.getSharedPreferences("zenhome", Activity.MODE_PRIVATE).getString("dock", "");
-        if (csv == null || csv.isEmpty()) {
-            try { csv = Settings.Global.getString(act.getContentResolver(), "zenhome_dock"); } catch (Exception ignored) { }
-        }
-        return csv == null || csv.isEmpty() ? new String[0] : csv.split("[,;\\s]+");
+    /** Memes applis que le dock de Home (dock automatique, revision du kit, doublons et nombre compris). */
+    java.util.List<String> packages() {
+        android.content.SharedPreferences prefs = act.getSharedPreferences("zenhome", Activity.MODE_PRIVATE);
+        Home.applyKit(act, prefs);
+        return Home.dock(act, prefs, Home.layout(prefs));
     }
 
     /** Ajoute le bandeau dans root ; renvoie la premiere tuile (focus initial), ou null sans appli. */
@@ -77,7 +75,8 @@ final class QuickDock {
         outer.addView(bar, lpB);
         FrameLayout.LayoutParams lpO = new FrameLayout.LayoutParams(-1, -1);
         lpO.rightMargin = dp(SettingsPanel.PW + 32);
-        root.addView(outer, 0, lpO);
+        // juste au-dessus du niveau 0 (voile sombre compris), sous les sous-menus qui s'empilent ensuite
+        root.addView(outer, Math.min(1, root.getChildCount()), lpO);
         bar.setAlpha(0f); bar.setTranslationY(dp(16));
         bar.animate().alpha(1f).translationY(0).setDuration(200).setInterpolator(new DecelerateInterpolator(2f)).start();
         return first;
@@ -114,7 +113,7 @@ final class QuickDock {
                     .translationZ(has ? dp(8) : 0).setDuration(160).setInterpolator(new DecelerateInterpolator()).start();
             GradientDrawable ring = null;
             if (has) { ring = new GradientDrawable(); ring.setCornerRadius(dp(9)); ring.setStroke(dp(2), 0xF2FFFFFF); }
-            v.setForeground(ring);
+            f.setForeground(ring);   // FrameLayout.setForeground : API 1 (View.setForeground : API 23)
         } });
         f.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

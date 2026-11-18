@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
@@ -216,19 +217,36 @@ public class Home extends Activity {
 
     // =====================================================================
     // Configuration : preferences de la TV, remplacees par celles du kit si plus recentes
+    String loadedRev;
+
     void loadConfig() {
-        String rev = setting("zenhome_rev");
+        applyKit(this, prefs);
+        loadedRev = prefs.getString("rev", null);
+        titleMode = prefs.getString("title_mode", "device");
+        titleText = prefs.getString("title", "");
+        layout = layout(prefs);
+        dockPkgs.clear();
+        dockPkgs.addAll(dock(this, prefs, layout));
+    }
+
+    static String setting(Context c, String key) {
+        try { return Settings.Global.getString(c.getContentResolver(), key); } catch (Throwable e) { return null; }
+    }
+
+    /** Reglages du kit (zenhome_*) recopies dans prefs si zenhome_rev a change. Aussi appele par QuickDock. */
+    static void applyKit(Context c, SharedPreferences prefs) {
+        String rev = setting(c, "zenhome_rev");
         if (rev != null && !rev.equals(prefs.getString("rev", null))) {
             SharedPreferences.Editor e = prefs.edit().putString("rev", rev);
-            String mode = setting("zenhome_title_mode");
+            String mode = setting(c, "zenhome_title_mode");
             if (mode != null) e.putString("title_mode", mode.trim());
-            String b64 = setting("zenhome_title_b64");
+            String b64 = setting(c, "zenhome_title_b64");
             if (b64 != null && b64.trim().length() > 0) {
                 try { e.putString("title", new String(Base64.decode(b64.trim(), Base64.DEFAULT), "UTF-8").trim()); } catch (Exception ignored) { }
             }
-            String lay = setting("zenhome_layout");
+            String lay = setting(c, "zenhome_layout");
             if (lay != null) e.putString("layout", lay.trim());
-            String d = setting("zenhome_dock");
+            String d = setting(c, "zenhome_dock");
             if (d != null) {
                 // "auto" : le kit demande le choix automatique des applis
                 if ("auto".equalsIgnoreCase(d.trim())) e.putString("dock", "").putBoolean("dock_user_set", false);
@@ -236,19 +254,26 @@ public class Home extends Activity {
             }
             e.apply();
         }
-        titleMode = prefs.getString("title_mode", "device");
-        titleText = prefs.getString("title", "");
-        try { layout = Integer.parseInt(prefs.getString("layout", "4")); } catch (Exception ex) { layout = 4; }
-        if (layout != 6 && layout != 8) layout = 4;
-        dockPkgs.clear();
+    }
+
+    static int layout(SharedPreferences prefs) {
+        int l;
+        try { l = Integer.parseInt(prefs.getString("layout", "4")); } catch (Exception ex) { l = 4; }
+        return l == 6 || l == 8 ? l : 4;
+    }
+
+    /** Applis du dock : choix enregistre, sinon dock automatique (KNOWN_DOCK) ; sans doublon, au plus layout. */
+    static ArrayList<String> dock(Context c, SharedPreferences prefs, int layout) {
+        ArrayList<String> dockPkgs = new ArrayList<>();
         String csv = prefs.getString("dock", "");
         if (csv.length() > 0) {
-            for (String p : csv.split("[,;\\s]+")) { p = p.trim(); if (p.length() > 0 && usable(p) && !dockPkgs.contains(p)) dockPkgs.add(p); }
+            for (String p : csv.split("[,;\\s]+")) { p = p.trim(); if (p.length() > 0 && usable(c, p) && !dockPkgs.contains(p)) dockPkgs.add(p); }
         }
         if (dockPkgs.isEmpty() && !prefs.getBoolean("dock_user_set", false)) {
-            for (String p : KNOWN_DOCK) { if (dockPkgs.size() >= layout) break; if (usable(p)) dockPkgs.add(p); }
+            for (String p : KNOWN_DOCK) { if (dockPkgs.size() >= layout) break; if (usable(c, p)) dockPkgs.add(p); }
         }
         while (dockPkgs.size() > layout) dockPkgs.remove(dockPkgs.size() - 1);
+        return dockPkgs;
     }
 
     void saveConfig() {
@@ -273,10 +298,13 @@ public class Home extends Activity {
         titleView.setVisibility(s == null || s.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
-    boolean usable(String pkg) {
+    boolean usable(String pkg) { return usable(this, pkg); }
+
+    static boolean usable(Context c, String pkg) {
         try {
-            ApplicationInfo ai = getPackageManager().getApplicationInfo(pkg, 0);
-            return ai.enabled && launchIntent(pkg) != null;
+            PackageManager pm = c.getPackageManager();
+            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            return ai.enabled && (pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null);
         } catch (Exception e) { return false; }
     }
 
@@ -1138,8 +1166,9 @@ public class Home extends Activity {
     protected void onResume() {
         super.onResume();
         // la configuration a pu changer via le kit pendant que l'accueil etait en fond
+        // compare a la revision chargee ici, pas a prefs : QuickDock peut avoir deja recopie une revision plus recente
         String rev = setting("zenhome_rev");
-        if (rev != null && !rev.equals(prefs.getString("rev", null)) && moveIndex < 0 && overlays.isEmpty()) {
+        if (rev != null && !rev.equals(loadedRev) && moveIndex < 0 && overlays.isEmpty()) {
             loadConfig(); applyTitle(); buildDock(0);
         }
         h.removeCallbacksAndMessages(null);
