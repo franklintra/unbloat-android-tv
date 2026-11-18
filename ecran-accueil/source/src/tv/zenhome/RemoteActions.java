@@ -121,8 +121,37 @@ final class RemoteActions {
             return;
         }
         if (hidCommand == POWER) { if (down) sleep(); return; }
+        if (hidCommand == HOME) { homeButton(down); return; }
         int k = keycode(hidCommand);
         if (k != 0) Inject.keyDown(k, down);   // le demon repete tant que le doigt reste : appui long possible
+    }
+
+    static final long HOME_LONG_MS = 500;
+    static volatile boolean homeLongFired;
+    static final Runnable homeLong = new Runnable() {
+        public void run() { homeLongFired = true; Log.i(TAG, "accueil : appui long"); Inject.key(KeyEvent.KEYCODE_HOME); }
+    };
+
+    /**
+     * Bouton TV de l'iPhone, comme la touche Reglages TCL (Keys) : clic = barre des reglages par-dessus l'appli
+     * (PanelActivity, un second clic la referme), appui long (HOME_LONG_MS) = ecran d'accueil.
+     */
+    static void homeButton(boolean down) {
+        if (down) {
+            homeLongFired = false;
+            main.removeCallbacks(homeLong);
+            main.postDelayed(homeLong, HOME_LONG_MS);
+            return;
+        }
+        main.removeCallbacks(homeLong);
+        if (homeLongFired) return;
+        Context c = ctx();
+        if (c == null) return;
+        Log.i(TAG, "accueil : clic, barre des reglages");
+        try {
+            c.startActivity(new Intent().setComponent(new android.content.ComponentName(c, "tv.zenhome.PanelActivity"))
+                    .putExtra(PanelActivity.EXTRA_DOCK, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) { Log.w(TAG, "barre des reglages", e); }
     }
 
     /**
@@ -257,7 +286,10 @@ final class RemoteActions {
     /**
      * Connexion authentifiee ouverte (true) ou fermee (false), une fois par connexion. iOS garde la connexion
      * longtemps : verrou PARTIAL limite a CONN_LOCK_MS, prolonge a chaque action, rendu a la derniere fermeture.
-     * Une session ouverte TV en veille n'est ainsi pas gelee par la STR avant le premier bouton.
+     * Le verrou ne suffit pas TV en veille : le STR_Worker TCL rendort la puce ~3 s apres le pair-verify meme
+     * verrou tenu (vu le 2026-11-18), et les messages suivants de l'iPhone (_sessionStart, boutons) ne la
+     * reveillent pas. Une connexion authentifiee TV en veille allume donc l'ecran tout de suite, comme une
+     * Apple TV quand on ouvre la Telecommande du Centre de controle.
      */
     static void onConnection(boolean isOpen) {
         Log.i(TAG, "connexion " + (isOpen ? "ouverte" : "fermee"));
@@ -265,6 +297,7 @@ final class RemoteActions {
         if (isOpen) refreshField();
         if (open > 0) hold(CONN_LOCK_MS);
         else release();
+        if (isOpen && !screenOn()) { Log.i(TAG, "iPhone connecte TV en veille"); wake(); }
     }
 
     /** Keys, SCREEN_ON / SCREEN_OFF : etat pousse aux iPhones ; ecran eteint, la TV peut dormir. */

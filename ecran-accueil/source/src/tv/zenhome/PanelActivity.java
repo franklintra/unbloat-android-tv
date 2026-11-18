@@ -48,7 +48,16 @@ public class PanelActivity extends Activity {
         root = new FrameLayout(this);
         setContentView(root);
         new SettingsPanel(this, root, host).show();
+        if (getIntent().getBooleanExtra(EXTRA_DOCK, false)) {
+            quick = new QuickDock(this);
+            final View first = quick.attach(root);
+            if (first != null) root.post(new Runnable() { public void run() { first.requestFocus(); } });
+        }
     }
+
+    /** Bouton TV de l'iPhone : bandeau des applis du dock sous la barre, focus dessus (QuickDock). */
+    static final String EXTRA_DOCK = "dock";
+    QuickDock quick;
 
     @Override
     protected void onNewIntent(Intent i) {
@@ -64,6 +73,7 @@ public class PanelActivity extends Activity {
             if (o instanceof ViewGroup) ((ViewGroup) o).setDescendantFocusability(
                     i == levels.size() - 1 ? ViewGroup.FOCUS_BEFORE_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         }
+        if (quick != null) quick.focusable(levels.size() <= 1);
     }
 
     // RETOUR quand aucune ligne n'a le focus (les lignes le gerent elles-memes, avec l'animation de sortie)
