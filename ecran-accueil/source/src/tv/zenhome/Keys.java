@@ -21,6 +21,8 @@ import android.view.accessibility.AccessibilityEvent;
  *
  * Le service tourne tant que la TV est allumee : il porte aussi le night shift (NightShift.apply chaque minute).
  * Il ecoute les changements de fenetre pour savoir quand on passe d'une appli a une entree TV/HDMI.
+ * Il porte enfin la telecommande de l'iPhone (Companion.java, RemoteActions.java) : le focus des champs de saisie
+ * ouvre le clavier de l'iPhone, et le texte tape y est ecrit (canRetrieveWindowContent, res/xml/keys.xml).
  *
  * Activation, une fois, par adb (l'ordre compte : TCL refuse de lier le service sans APP_AUTO_START) :
  *   appops set tv.zenhome APP_AUTO_START allow
@@ -43,6 +45,10 @@ public class Keys extends AccessibilityService {
     }
     static final long LONG_MS = 600, TICK_MS = 60000;
 
+    // oublie les iPhones appaires a la telecommande ; reserve a shell (adb) et au systeme :
+    //   adb shell am broadcast -a tv.zenhome.FORGET_IPHONES [--es id <identifiant de pair-setup>]
+    static final String FORGET_IPHONES = "tv.zenhome.FORGET_IPHONES";
+
     static Keys self;
     final Handler h = new Handler();
     boolean longFired, onTvInput;
@@ -59,8 +65,21 @@ public class Keys extends AccessibilityService {
     // ecran rallume, heure ou fuseau change : on n'attend pas la minute suivante
     final BroadcastReceiver wake = new BroadcastReceiver() {
         public void onReceive(Context c, Intent i) {
-            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) { AudioOnly.onScreenOff(c); return; }
-            if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) AudioOnly.onScreenOn(c);
+            if (FORGET_IPHONES.equals(i.getAction())) {
+                String id = i.getStringExtra("id");   // un seul appareil (identifiant de pair-setup), sinon tous
+                if (id != null) Companion.forgetClient(id); else Companion.forgetClients();
+                return;
+            }
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
+                AudioOnly.onScreenOff(c);
+                RemoteActions.onScreen(false);
+                return;
+            }
+            if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) {
+                AudioOnly.onScreenOn(c);
+                RemoteActions.onScreen(true);
+                if (Companion.running()) Companion.reannounce();
+            }
             h.removeCallbacks(tick); h.post(tick); AirPlay.wake(); Mirror.reannounceIfRunning();
         }
     };
@@ -78,26 +97,34 @@ public class Keys extends AccessibilityService {
         f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         f.addAction(Intent.ACTION_SCREEN_OFF);
         registerReceiver(wake, f);
+        registerReceiver(wake, new IntentFilter(FORGET_IPHONES), android.Manifest.permission.WRITE_SECURE_SETTINGS, null);
         AudioOnly.restoreTimeout(this);   // si la TV a ete coupee pendant une mise en veille AirPlay
         AudioOnly.watchPlayback(this);    // Spotify Connect et autres applis : la musique reveille la TV
         NightShift.resend(this);   // apres un redemarrage, on ne sait pas ce que la TV a garde
         h.post(tick);
         Mirror.start(this);    // AirPlay (son, video, recopie d'ecran) par UxPlay, voir Mirror.java
         if (!Mirror.running()) AirPlay.start(this);   // repli : enceinte AirPlay 1 seule, voir AirPlay.java
+        Inject.ensure(this);      // demon des touches injectees, lance par adb local (cle a autoriser une fois, voir AdbLocal)
+        Companion.start(this);    // telecommande du centre de controle de l'iPhone, voir Companion.java
     }
 
     @Override
     public void onDestroy() {
         AirPlay.stop();
         Mirror.stop();
+        Companion.stop();
         h.removeCallbacksAndMessages(null);
         try { unregisterReceiver(wake); } catch (Exception ignored) { }
         if (self == this) self = null;
         super.onDestroy();
     }
 
-    /** Entree TV/HDMI (appli com.tcl.tv) ou applis : chacune garde son propre retroeclairage, on renvoie tout au passage. */
+    /**
+     * Champs de saisie (focus, texte) : clavier de l'iPhone, voir RemoteActions.onAccessibility.
+     * Entree TV/HDMI (appli com.tcl.tv) ou applis : chacune garde son propre retroeclairage, on renvoie tout au passage.
+     */
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
+        RemoteActions.onAccessibility(this, e);
         if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || e.getPackageName() == null) return;
         boolean tv = "com.tcl.tv".contentEquals(e.getPackageName());
         if (tv == onTvInput) return;

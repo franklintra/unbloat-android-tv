@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="tv.zenhome" android:versionCode="27" android:versionName="2.25">
+    package="tv.zenhome" android:versionCode="28" android:versionName="2.26">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="24" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -37,6 +37,11 @@
         <activity android:name=".WakeActivity" android:theme="@style/Panel" android:exported="false"
             android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="tv.zenhome.wake"
             android:launchMode="singleInstance" />
+        <!-- Code d'appairage de la telecommande de l'iPhone (voir Companion.java, RemoteActions.showPin) -->
+        <activity android:name=".PinActivity" android:theme="@style/Panel" android:exported="false"
+            android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="tv.zenhome.pin"
+            android:launchMode="singleInstance"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode|locale" />
         <!-- Recopie d'ecran et video AirPlay plein ecran (voir Mirror.java) -->
         <activity android:name=".MirrorActivity" android:exported="false"
             android:launchMode="singleTask" android:taskAffinity="tv.zenhome.mirror"
