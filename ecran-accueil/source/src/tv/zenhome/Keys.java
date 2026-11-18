@@ -71,11 +71,13 @@ public class Keys extends AccessibilityService {
                 return;
             }
             if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
+                SleepProxy.onScreenOff(c);   // avant la STR (~4 s) : le proxy de veille repond pour nous
                 AudioOnly.onScreenOff(c);
                 RemoteActions.onScreen(false);
                 return;
             }
             if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) {
+                SleepProxy.onScreenOn(c);    // le proxy rend nos enregistrements avant les nouvelles annonces
                 AudioOnly.onScreenOn(c);
                 RemoteActions.onScreen(true);
                 if (Companion.running()) Companion.reannounce();
@@ -106,6 +108,7 @@ public class Keys extends AccessibilityService {
         if (!Mirror.running()) AirPlay.start(this);   // repli : enceinte AirPlay 1 seule, voir AirPlay.java
         Inject.ensure(this);      // demon des touches injectees, lance par adb local (cle a autoriser une fois, voir AdbLocal)
         Companion.start(this);    // telecommande du centre de controle de l'iPhone, voir Companion.java
+        SleepProxy.start(this);   // visible des iPhones pendant la veille rapide, voir SleepProxy.java
     }
 
     @Override
@@ -113,6 +116,7 @@ public class Keys extends AccessibilityService {
         AirPlay.stop();
         Mirror.stop();
         Companion.stop();
+        SleepProxy.stop();
         h.removeCallbacksAndMessages(null);
         try { unregisterReceiver(wake); } catch (Exception ignored) { }
         if (self == this) self = null;

@@ -47,6 +47,8 @@
             android:launchMode="singleTask" android:taskAffinity="tv.zenhome.mirror"
             android:excludeFromRecents="true" android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode|locale" />
+        <!-- Renouvellement du bail du proxy de veille Bonjour, ecran eteint (voir SleepProxy.java) -->
+        <receiver android:name=".SleepProxy$Renew" android:exported="false" />
         <!-- Touche Reglages de la telecommande : court = PanelActivity, long = Parametres (activation par adb : voir Keys.java) -->
         <service android:name=".Keys" android:label="Zen Home : touche Réglages"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
