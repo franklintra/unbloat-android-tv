@@ -44,6 +44,9 @@ final class TclWindows {
     static void tick(Context c) {
         long now = SystemClock.elapsedRealtime();
         if (running || now - last < CHECK_MS) return;
+        // force-stop pendant qu'un reglage night shift attend dans la file TCL : il est perdu (vu le 2026-11-18,
+        // retroeclairage reste a 1 le matin). On attend un tic sans envoi.
+        if (now - NightShift.lastSent < 30_000) return;
         PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
         if (pm == null || !pm.isInteractive() || AudioOnly.dark || AudioOnly.armed) return;
         last = now;
@@ -54,7 +57,10 @@ final class TclWindows {
                 if (AudioOnly.dark || AudioOnly.armed) return;
                 String r = AdbLocal.shell(app, CMD, 20_000);
                 if (r == null) Log.w(TAG, "adb local indisponible, fenetres TCL non nettoyees");
-                else if (r.contains("nettoye")) Log.i(TAG, "com.tcl.settings redemarre, fenetres cachees retirees : " + r.trim());
+                else if (r.contains("nettoye")) {
+                    Log.i(TAG, "com.tcl.settings redemarre, fenetres cachees retirees : " + r.trim());
+                    NightShift.resend(app);   // un envoi peut s'etre perdu malgre tout : le prochain tic renvoie tout
+                }
             } finally { running = false; }
         } }, "ZenTcl").start();
     }

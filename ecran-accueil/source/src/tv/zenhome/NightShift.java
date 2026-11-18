@@ -173,8 +173,12 @@ final class NightShift {
     static void send(Context c, String key, int value, String item, String text) {
         SharedPreferences sp = prefs(c);
         if (sp.contains(key) && sp.getInt(key, 0) == value) return;
+        lastSent = android.os.SystemClock.elapsedRealtime();
         if (tcl(c, item, text != null ? text : String.valueOf(value))) sp.edit().putInt(key, value).apply();
     }
+
+    /** Dernier envoi a la fenetre TCL (elapsedRealtime) : TclWindows ne redemarre pas com.tcl.settings juste apres. */
+    static volatile long lastSent = -60_000;
 
     /** Oublie ce qui a ete envoye : le prochain apply renvoie tout (changement d'entree, reglage touche a la main). */
     static void resend(Context c) {
