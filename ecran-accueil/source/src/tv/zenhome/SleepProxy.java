@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -29,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -62,11 +65,16 @@ final class SleepProxy {
     static final String TAG = "ZenSleepProxy";
     static final String[] TYPES = { "_companion-link._tcp", "_airplay._tcp", "_raop._tcp" };
     static final int LEASE_S = 7200, TTL_HOST = 120, TTL_SHARED = 4500;
-    static final long RENEW_MS = 90 * 60_000L, SNAPSHOT_DELAY_MS = 15_000, LOCK_MS = 10_000;
+    // LOCK_MS couvre les 3 essais de register (~3,3 s chacun : recherche du proxy 2 s, reponse 1 s, pause)
+    static final long RENEW_MS = 90 * 60_000L, SNAPSHOT_DELAY_MS = 15_000, LOCK_MS = 15_000;
+    static final long RETRY_MIN_MS = 5 * 60_000L;   // proxy absent ou muet : nouvel essai, delai double a chaque echec
     static final int T_A = 1, T_PTR = 12, T_TXT = 16, T_SRV = 33, T_OPT = 41, CLASS_IN = 1, CACHE_FLUSH = 0x8000;
     static final String RENEW = "tv.zenhome.SLEEP_PROXY_RENEW";
 
     static final ExecutorService bg = Executors.newSingleThreadExecutor(Companion.daemon("zen-sleep-proxy"));
+    // les attentes du releve ne bloquent pas bg : un SCREEN_OFF juste apres le reveil s'enregistre tout de suite
+    static final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(Companion.daemon("zen-sleep-proxy-timer"));
+    static volatile long retryMs = RETRY_MIN_MS;
     static final SecureRandom random = new SecureRandom();
     static Context ctx;
     static volatile List<byte[]> records;        // releve : enregistrements encodes, prets pour la mise a jour
@@ -85,14 +93,18 @@ final class SleepProxy {
      */
     static void start(Context c) {
         ctx = c.getApplicationContext();
-        bg.execute(new Runnable() {
+        later(new Runnable() {
             public void run() {
-                SystemClock.sleep(SNAPSHOT_DELAY_MS);
                 if (awake()) { snapshot(); return; }
                 PowerManager.WakeLock l = lock();
                 try { register(true); } finally { if (l.isHeld()) l.release(); }
             }
         });
+    }
+
+    /** Lance r sur bg apres SNAPSHOT_DELAY_MS (le temps que mdnsd ait refait ses annonces). */
+    static void later(final Runnable r) {
+        timer.schedule(new Runnable() { public void run() { bg.execute(r); } }, SNAPSHOT_DELAY_MS, TimeUnit.MILLISECONDS);
     }
 
     static void stop() { cancelRenew(); }
@@ -119,12 +131,7 @@ final class SleepProxy {
     }
 
     static void snapshotLater() {
-        bg.execute(new Runnable() {
-            public void run() {
-                SystemClock.sleep(SNAPSHOT_DELAY_MS);
-                if (awake()) snapshot();
-            }
-        });
+        later(new Runnable() { public void run() { if (awake()) snapshot(); } });
     }
 
     static boolean awake() {
@@ -191,7 +198,7 @@ final class SleepProxy {
         byte[] type = name("_sleep-proxy._udp.local");
         Rec best = null;
         long bestMetric = Long.MAX_VALUE;
-        Pattern p = Pattern.compile("^(\\d+)-(\\d+)-(\\d+)-(\\d+)");
+        Pattern p = Pattern.compile("^(\\d{1,3})-(\\d{1,3})-(\\d{1,3})-(\\d{1,3})");   // borne : pas de parseLong qui deborde
         for (Rec r : query(InetAddress.getByName("224.0.0.251"), type, T_PTR, 1200, true)) {
             if (r.type != T_PTR || !sameName(r.name, type)) continue;
             Matcher m = p.matcher(firstLabel(r.rdata));
@@ -217,20 +224,32 @@ final class SleepProxy {
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
                 if (proxy == null || attempt > 0) proxy = findProxy();
-                if (proxy == null) { Log.w(TAG, "veille : aucun proxy _sleep-proxy._udp sur le reseau"); return; }
+                if (proxy == null) { Log.w(TAG, "veille : aucun proxy _sleep-proxy._udp sur le reseau"); retryLater(); return; }
                 int lease = update(proxy, recs, seq);
                 if (lease >= 0) {
                     registered = true;
+                    retryMs = RETRY_MIN_MS;
                     Log.i(TAG, "veille : " + recs.size() + " enregistrements confies au proxy, bail " + lease + " s, seq " + seq);
-                    scheduleRenew();
+                    // renouvele aux 3/4 du bail accorde (le proxy peut en donner moins que LEASE_S)
+                    scheduleRenew(Math.min(RENEW_MS, lease * 750L));
                     return;
                 }
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {   // reponse mDNS malformee d'un autre appareil comprise
                 Log.w(TAG, "veille : envoi au proxy", e);
             }
             SystemClock.sleep(300);
         }
         Log.w(TAG, "veille : le proxy n'a pas accepte l'enregistrement");
+        retryLater();
+    }
+
+    /** Echec (Apple TV du proxy redemarree...) : sans nouvel essai, la TV resterait invisible toute la nuit. */
+    static void retryLater() {
+        if (awake()) return;
+        long d = retryMs;
+        retryMs = Math.min(retryMs * 2, RENEW_MS);
+        Log.i(TAG, "veille : nouvel essai dans " + d / 60_000 + " min");
+        scheduleRenew(d);
     }
 
     /** DNS UPDATE + OPT (Lease, Owner) ; rend le bail accorde, ou -1 (refus ou pas de reponse). */
@@ -307,10 +326,12 @@ final class SleepProxy {
         return PendingIntent.getBroadcast(ctx, 0, new Intent(RENEW).setClass(ctx, Renew.class), PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    static void scheduleRenew() {
+    static void scheduleRenew(long inMs) {
         try {
-            ((AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE)).setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + RENEW_MS, renewIntent());
+            AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            long at = SystemClock.elapsedRealtime() + inMs;
+            if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, renewIntent());
+            else am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, renewIntent());
         } catch (Exception e) { Log.w(TAG, "alarme de renouvellement", e); }
     }
 
