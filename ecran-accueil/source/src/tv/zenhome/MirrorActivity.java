@@ -157,7 +157,8 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
     public void surfaceChanged(SurfaceHolder sh, int f, int w, int hgt) { }
 
     public void surfaceDestroyed(SurfaceHolder sh) {
-        Mirror.Video.setSurface(null);
+        // l'ancienne instance (singleTask qui finit) ne coupe pas le decodeur de la nouvelle : surface statique
+        Mirror.Video.clearSurface(sh.getSurface());
         releasePlayer();
         holder = null;
     }
@@ -185,7 +186,8 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
                     prepared = true;
                     int d = mp.getDuration();
                     if (d > 0) Mirror.Hls.duration = d / 1000.0;
-                    float s = Mirror.Hls.startAt;
+                    // surface recreee (ecran eteint puis rallume) : on reprend ou on en etait, pas au debut
+                    double s = Mirror.Hls.position > 0 ? Mirror.Hls.position : Mirror.Hls.startAt;
                     if (s > 0) mp.seekTo((int) (s * 1000));
                     if (!Mirror.Hls.paused) mp.start();
                     Log.i(TAG, "HLS pret, duree " + d / 1000 + " s");

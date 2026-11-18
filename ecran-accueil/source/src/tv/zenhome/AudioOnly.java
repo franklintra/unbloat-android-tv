@@ -91,6 +91,7 @@ final class AudioOnly {
     /** Keys, ACTION_SCREEN_ON. */
     static void onScreenOn(Context c) {
         ctx = c.getApplicationContext();
+        offUntil = 0;   // rallumee a la main apres un double Marche : la musique peut de nouveau la reveiller
         restoreTimeout(c);
         if (!armed) return;
         armed = false;
@@ -130,8 +131,10 @@ final class AudioOnly {
         restoreTimeout(c);
     }
 
-    static final long OFF_MS = 120_000;
-    static volatile long offUntil;   // eteinte expres pendant la musique : pas de reveil automatique avant
+    // eteinte expres pendant la musique : pas de reveil automatique avant offUntil. Leve a la fin de la musique ou
+    // quand on rallume la TV ; OFF_MS n'est qu'un filet si aucune fin n'arrive (avant : 2 min, puis la TV se rallumait)
+    static final long OFF_MS = 6 * 3600_000L;
+    static volatile long offUntil;
 
     static final Runnable rewake = new Runnable() {
         public void run() { if (SystemClock.elapsedRealtime() >= offUntil) AirPlay.wakeScreen(ctx); }
@@ -176,7 +179,7 @@ final class AudioOnly {
     }
 
     static void sessionStarted() { h.removeCallbacks(sleep); if (ctx != null) restoreTimeout(ctx); }
-    static void sessionEnded() { h.removeCallbacks(sleep); if (dark) h.postDelayed(sleep, GRACE_MS); }
+    static void sessionEnded() { offUntil = 0; h.removeCallbacks(sleep); if (dark) h.postDelayed(sleep, GRACE_MS); }
 
     // ---- musique d'une autre appli (Spotify Connect...) lancee pendant la veille
 

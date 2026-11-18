@@ -13,6 +13,7 @@ import android.net.NetworkRequest;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.PowerManager;
 import android.util.Base64;
 import android.util.Log;
@@ -75,6 +76,7 @@ final class AirPlay {
     NsdManager.RegistrationListener reg;
     ConnectivityManager.NetworkCallback netCb;
     volatile Session current;
+    static final int MAX_BODY = 4 << 20;   // SET_PARAMETER porte la pochette (centaines de Ko) ; 4 Mio suffisent
     final float volume = 1f;   // gain de la piste ; le volume AirPlay regle celui de la TV
 
     static AirPlay instance;
@@ -205,10 +207,18 @@ final class AirPlay {
         void run() {
             try {
                 sock.setTcpNoDelay(true);
+                // iPhone parti sans TEARDOWN : sans delai, readLine bloquait pour toujours et la session (verrous,
+                // AirPlay.busy) ne finissait jamais. Silence RTSP admis tant que le son arrive.
+                sock.setSoTimeout(30_000);
                 InputStream in = new BufferedInputStream(sock.getInputStream());
                 OutputStream out = sock.getOutputStream();
                 while (running) {
-                    String line = readLine(in);
+                    String line;
+                    try { line = readLine(in); }
+                    catch (java.net.SocketTimeoutException t) {
+                        if (session != null && session.active && session.recent()) continue;
+                        throw t;
+                    }
                     if (line == null) break;
                     if (line.isEmpty()) continue;
                     String[] rl = line.split(" ");
@@ -224,6 +234,8 @@ final class AirPlay {
                     int len = 0;
                     try { len = Integer.parseInt(h.containsKey("content-length") ? h.get("content-length") : "0"); }
                     catch (NumberFormatException ignored) { }
+                    // lu avant le code AirPlay : une longueur enorme faisait un OutOfMemoryError, qui tuait Zen Home
+                    if (len < 0 || len > MAX_BODY) { Log.w(TAG, "corps RTSP refuse (" + len + " octets)"); break; }
                     byte[] body = new byte[len];
                     for (int r = 0; r < len; ) { int n = in.read(body, r, len - r); if (n < 0) throw new IOException("eof"); r += n; }
 
@@ -248,8 +260,8 @@ final class AirPlay {
                         case "ANNOUNCE":
                             Session old = current;
                             if (old != null) old.stop();
+                            session = new Session(new String(body, "UTF-8"));   // peut echouer : alors pas de reveil
                             wakeScreen();
-                            session = new Session(new String(body, "UTF-8"));
                             current = session;
                             Log.i(TAG, "ANNOUNCE de " + sock.getInetAddress().getHostAddress() + " " + session.describe());
                             break;
@@ -500,6 +512,8 @@ final class AirPlay {
     // ------------------------------------------------------------------ session audio
 
     final class Session {
+        volatile long lastAudio = android.os.SystemClock.elapsedRealtime();
+        boolean recent() { return android.os.SystemClock.elapsedRealtime() - lastAudio < 60_000; }
         boolean alacCodec = true;
         int frameLen = 352, channels = 2;
         Alac alac;
@@ -664,8 +678,10 @@ final class AirPlay {
             }
         }
 
-        void onAudio(byte[] b, int off, int len, byte[] dec, boolean live) throws Exception {
+        // fils audio et controle (paquets renvoyes) : un seul Cipher et un seul Alac, a etat, d'ou le verrou
+        synchronized void onAudio(byte[] b, int off, int len, byte[] dec, boolean live) throws Exception {
             if (len < 12) return;
+            lastAudio = android.os.SystemClock.elapsedRealtime();
             int seq = ((b[off + 2] & 0xff) << 8) | (b[off + 3] & 0xff);
             long ts = u32(b, off + 4);
             int plen = len - 12, poff = off + 12;
@@ -755,7 +771,7 @@ final class AirPlay {
             track = t;
             applyVolume();
             t.play();
-            Log.i(TAG, "lecture demarree, tampon " + t.getBufferSizeInFrames() + " trames");
+            if (Build.VERSION.SDK_INT >= 23) Log.i(TAG, "lecture demarree, tampon " + t.getBufferSizeInFrames() + " trames");
             long written = 0, lastStat = 0;
             int nSilence = 0, nSkip = 0, nMissing = 0;
             AudioTimestamp at = new AudioTimestamp();

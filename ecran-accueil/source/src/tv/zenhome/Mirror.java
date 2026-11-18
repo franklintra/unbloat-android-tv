@@ -161,7 +161,7 @@ final class Mirror {
 
     static void onClient(String id, String model, String client) {
         Log.i(TAG, "client " + client + " (" + model + ") " + id);
-        connLock.acquire(60_000L);
+        if (!connLock.isHeld()) connLock.acquire(60_000L);   // sinon garde les 10 min de onConnections
     }
 
     static int onVideoFormat(boolean h265, int ws, int hs, int w, int h) {
@@ -347,6 +347,11 @@ final class Mirror {
                 surface = s;
                 if (s == null) releaseCodec(); else restart();
             }
+        }
+
+        /** surfaceDestroyed : ne coupe le decodeur que si c'est encore cette Surface qu'il sert. */
+        static void clearSurface(Surface s) {
+            synchronized (lock) { if (surface == s) { surface = null; releaseCodec(); } }
         }
 
         static void release() {

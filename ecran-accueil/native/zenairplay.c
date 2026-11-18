@@ -260,7 +260,12 @@ static void *supervise(void *unused) {
             unsigned short port = raop_get_port(raop);
             raop_stop_httpd(raop);
             raop_remove_known_connections(raop);
-            raop_start_httpd(raop, &port);
+            if (raop_start_httpd(raop, &port) < 0) {
+                /* sinon AirPlay reste annonce mais mort : on reessaie a la seconde suivante */
+                __android_log_print(ANDROID_LOG_ERROR, TAG, "httpd restart failed on port %u, retrying", port);
+                reset_httpd = 1;
+                continue;
+            }
             raop_set_port(raop, port);
             __android_log_print(ANDROID_LOG_INFO, TAG, "httpd restarted on port %u", port);
         }
