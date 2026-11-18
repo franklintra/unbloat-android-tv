@@ -207,6 +207,7 @@ class SettingsPanel {
     String nightText() {
         int p = NightShift.level(act);
         if (NightShift.manual(act)) return t("Manuel  ·  ", "Manual  ·  ") + p + " %";
+        if (NightShift.held(act)) return t("En pause  ·  image réglée à la main", "Paused  ·  picture set by hand");
         if (p == 0) return t("Auto  ·  dès ", "Auto  ·  from ") + hm(NightShift.evening(System.currentTimeMillis())[0]);
         return "Auto  ·  " + p + " %";
     }
@@ -597,6 +598,9 @@ class SettingsPanel {
             Intent i = new Intent("com.tcl.settings.SHOW_WINDOW").setClassName(TCL_PKG, TCL_WINDOW).putExtra("Type", type);
             try {
                 if (act.startService(i) == null) throw new IllegalStateException();
+                // reglage d'image a la main : le night shift le laisse jusqu'au prochain lever ou coucher
+                if (type.equals("brightness") || type.equals("picturemode") || type.equals("picture")) NightShift.hold(act);
+                if (type.equals("AudioOnly")) TclWindows.audioOnly = true;   // pas de force-stop pendant le compte a rebours
                 host.closeAll();
             } catch (Exception e) { toast(t("Impossible d'ouvrir", "Cannot open")); }
         } };

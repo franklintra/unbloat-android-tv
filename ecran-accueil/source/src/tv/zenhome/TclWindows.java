@@ -36,6 +36,9 @@ final class TclWindows {
             + "&& echo nettoye; fi";
 
     static long last = -CHECK_MS;
+    // mode Audio seul lance par la barre des reglages (pas par AirPlay, voir AudioOnly) : la mise en veille differee
+    // est une alarme de com.tcl.settings, qu'un force-stop effacerait. Fin a la prochaine touche ou au changement d'ecran.
+    static volatile boolean audioOnly;
     static volatile boolean running;
 
     private TclWindows() { }
@@ -48,13 +51,13 @@ final class TclWindows {
         // retroeclairage reste a 1 le matin). On attend un tic sans envoi.
         if (now - NightShift.lastSent < 30_000) return;
         PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
-        if (pm == null || !pm.isInteractive() || AudioOnly.dark || AudioOnly.armed) return;
+        if (pm == null || !pm.isInteractive() || AudioOnly.dark || AudioOnly.armed || audioOnly) return;
         last = now;
         running = true;
         final Context app = c.getApplicationContext();
         new Thread(new Runnable() { public void run() {
             try {
-                if (AudioOnly.dark || AudioOnly.armed) return;
+                if (AudioOnly.dark || AudioOnly.armed || audioOnly) return;
                 String r = AdbLocal.shell(app, CMD, 20_000);
                 if (r == null) Log.w(TAG, "adb local indisponible, fenetres TCL non nettoyees");
                 else if (r.contains("nettoye")) {

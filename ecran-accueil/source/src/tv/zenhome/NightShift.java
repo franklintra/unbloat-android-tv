@@ -52,10 +52,22 @@ final class NightShift {
     static boolean manual(Context c) { return prefs(c).getLong("manualUntil", 0) > System.currentTimeMillis(); }
 
     static void setManual(Context c, int v) {
-        prefs(c).edit().putInt("manual", clamp(v)).putLong("manualUntil", nextChange(System.currentTimeMillis())).apply();
+        prefs(c).edit().putInt("manual", clamp(v)).putLong("manualUntil", nextChange(System.currentTimeMillis()))
+                .remove("holdUntil").apply();
     }
 
-    static void setAuto(Context c) { prefs(c).edit().remove("manualUntil").apply(); }
+    static void setAuto(Context c) { prefs(c).edit().remove("manualUntil").remove("holdUntil").apply(); }
+
+    /**
+     * Luminosite, mode image ou reglages d'image ouverts depuis la barre : la valeur choisie a la main tient jusqu'au
+     * prochain lever ou coucher du soleil (comme le curseur Night shift), puis tout est renvoye. Sans cela le tic
+     * suivant de la rampe l'ecrasait, et le cache sent* ignorait un mode image qui remet ses propres valeurs.
+     */
+    static void hold(Context c) {
+        prefs(c).edit().putLong("holdUntil", nextChange(System.currentTimeMillis())).putBoolean("held", true).apply();
+    }
+
+    static boolean held(Context c) { return prefs(c).getLong("holdUntil", 0) > System.currentTimeMillis(); }
 
     /** Niveau en cours, 0 (jour) a 100 (nuit). */
     static int level(Context c) { return manual(c) ? prefs(c).getInt("manual", 0) : autoLevel(System.currentTimeMillis()); }
@@ -147,12 +159,22 @@ final class NightShift {
         return 1f - (1f - FLOAT_FLOOR) * (p - 50) / 50f;
     }
 
-    /** Ecrit screen_brightness_float si la valeur a change (aucune fenetre TCL ouverte, rien a refermer). */
+    /**
+     * Ecrit screen_brightness_float si la valeur a change (aucune fenetre TCL ouverte, rien a refermer). Le jour
+     * (1.0), on ne le remet que si c'est nous qui l'avions baisse (floatDimmed) : un autre reglage reste en place.
+     */
     static void applyScreenBrightnessFloat(Context c, float value) {
         try {
+            SharedPreferences sp = prefs(c);
             float now = Settings.System.getFloat(c.getContentResolver(), "screen_brightness_float", -1f);
-            if (Math.abs(now - value) < 0.004f) return;
+            boolean day = value >= 1f;
+            if (Math.abs(now - value) < 0.004f) {
+                if (day && sp.getBoolean("floatDimmed", false)) sp.edit().remove("floatDimmed").apply();
+                return;
+            }
+            if (day && !sp.getBoolean("floatDimmed", false)) return;
             Settings.System.putFloat(c.getContentResolver(), "screen_brightness_float", value);
+            if (!day) sp.edit().putBoolean("floatDimmed", true).apply();
         } catch (Exception ignored) { }   // WRITE_SETTINGS non accorde : la seconde etage reste neutre
     }
 
@@ -161,6 +183,8 @@ final class NightShift {
         int p = level(c);
         PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
         if (pm != null && !pm.isInteractive()) return;   // en veille
+        if (held(c)) return;   // reglage d'image fait a la main (hold)
+        if (prefs(c).getBoolean("held", false)) { prefs(c).edit().remove("held").apply(); resend(c); }
         send(c, "sentTwoPoints", 1, TWO_POINTS, tclText(c, "open", "Marche"));   // les gains n'agissent qu'avec 2 points
         send(c, "sentTemp", temperature(p), "picture_color_temperature", null);
         send(c, "sentBacklight", backlight(day(c), p), "picture_brightness", null);

@@ -71,6 +71,7 @@ public class Keys extends AccessibilityService {
                 if (id != null) Companion.forgetClient(id); else Companion.forgetClients();
                 return;
             }
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction()) || Intent.ACTION_SCREEN_ON.equals(i.getAction())) TclWindows.audioOnly = false;
             if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
                 SleepProxy.onScreenOff(c);   // avant la STR (~4 s) : le proxy de veille repond pour nous
                 AudioOnly.onScreenOff(c);
@@ -131,6 +132,7 @@ public class Keys extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
         RemoteActions.onAccessibility(this, e);
         if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || e.getPackageName() == null) return;
+        if (!isActivity(e)) return;   // nos fenetres, les curseurs TCL, systemui : pas un changement d'entree
         boolean tv = "com.tcl.tv".contentEquals(e.getPackageName());
         if (tv == onTvInput) return;
         onTvInput = tv;
@@ -140,9 +142,28 @@ public class Keys extends AccessibilityService {
     }
     @Override public void onInterrupt() { }
 
+    /**
+     * Fenetre d'une activite d'une autre appli. Sans ce filtre, la barre des reglages ouverte sur l'entree TV
+     * passait pour un changement d'appli : renvoi des 5 reglages, 5 curseurs TCL par-dessus la barre.
+     */
+    boolean isActivity(AccessibilityEvent e) {
+        String pkg = e.getPackageName().toString();
+        if (pkg.equals(getPackageName()) || pkg.equals(NightShift.TCL_PKG) || pkg.equals("com.android.systemui")) return false;
+        if (pkg.equals("com.tcl.tv")) return true;   // entree TV/HDMI : on garde l'ancien comportement, quelle que soit la classe
+        CharSequence cls = e.getClassName();
+        if (cls == null) return false;
+        try {
+            getPackageManager().getActivityInfo(new ComponentName(pkg, cls.toString()), 0);
+            return true;
+        } catch (Exception x) { return false; }   // dialogue, toast, vue : pas une activite
+    }
+
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
-        if (e.getAction() == KeyEvent.ACTION_DOWN) AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            AudioOnly.onKey();   // ecran eteint par AirPlay : TCL le rallume
+            TclWindows.audioOnly = false;   // idem pour le mode Audio seul de la barre des reglages
+        }
         int c = e.getKeyCode();
         String pkg = shortcut(c);
         if (pkg != null) {
