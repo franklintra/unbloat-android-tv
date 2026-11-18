@@ -96,6 +96,8 @@ final class Opack {
     private static void le(ByteArrayOutputStream b, long v, int n) { for (int i = 0; i < n; i++) b.write((int) (v >>> (8 * i)) & 0xff); }
 
     /** Decode le premier objet ; les octets en trop sont ignores (comme opack.unpack). Exception si invalide. */
+    static final int MAX_TABLE = 4096;   // les messages Companion en ont quelques dizaines
+
     static Object unpack(byte[] data) { return unpack(data, new int[]{0}, new ArrayList<Object>(), 0); }
 
     private static Object unpack(byte[] d, int[] pos, List<Object> table, int depth) {
@@ -171,7 +173,11 @@ final class Opack {
             p += 1 + w;
         } else throw new IllegalArgumentException("OPACK : type 0x" + Integer.toHexString(t));
 
-        if (add && indexOf(table, v) < 0) table.add(v);
+        if (add && indexOf(table, v) < 0) {
+            // indexOf est lineaire : sans plafond, une trame de 1 Mio non authentifiee coute des minutes de CPU
+            if (table.size() >= MAX_TABLE) throw new IllegalArgumentException("OPACK : trop d'objets");
+            table.add(v);
+        }
         pos[0] = p;
         return v;
     }

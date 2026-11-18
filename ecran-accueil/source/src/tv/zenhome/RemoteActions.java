@@ -126,17 +126,37 @@ final class RemoteActions {
         if (k != 0) Inject.keyDown(k, down);   // le demon repete tant que le doigt reste : appui long possible
     }
 
+    /** Appui perdu (connexion ou session TV Remote terminee doigt pose) : relache sans rien declencher. */
+    static void release(int hidCommand) {
+        if (hidCommand == HOME) {
+            main.post(new Runnable() { public void run() { main.removeCallbacks(homeLong); homeLongFired = true; } });
+            return;
+        }
+        int k = keycode(hidCommand);
+        if (k != 0) Inject.keyDown(k, false);
+    }
+
     static final long HOME_LONG_MS = 500;
-    static volatile boolean homeLongFired;
+    static boolean homeLongFired;   // fil principal seulement
     static final Runnable homeLong = new Runnable() {
-        public void run() { homeLongFired = true; Log.i(TAG, "accueil : appui long"); Inject.key(KeyEvent.KEYCODE_HOME); }
+        public void run() {
+            homeLongFired = true;
+            Log.i(TAG, "accueil : appui long");
+            // demon d'injection absent : l'accessibilite sait aussi aller a l'accueil
+            if (!Inject.key(KeyEvent.KEYCODE_HOME) && Keys.self != null) Keys.self.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME);
+        }
     };
 
     /**
      * Bouton TV de l'iPhone, comme la touche Reglages TCL (Keys) : clic = barre des reglages par-dessus l'appli
      * (PanelActivity, un second clic la referme), appui long (HOME_LONG_MS) = ecran d'accueil.
      */
-    static void homeButton(boolean down) {
+    static void homeButton(final boolean down) {
+        // tout sur le fil principal, comme homeLong : un relachement a HOME_LONG_MS pile ne fait pas clic et accueil
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(new Runnable() { public void run() { homeButton(down); } });
+            return;
+        }
         if (down) {
             homeLongFired = false;
             main.removeCallbacks(homeLong);

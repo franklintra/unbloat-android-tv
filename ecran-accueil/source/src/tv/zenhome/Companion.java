@@ -93,6 +93,9 @@ final class Companion {
     static final long PIN_ENTRY_TIMEOUT_MS = 120_000;   // le temps de lire le code sur la TV et de le taper
     static final int SETUP_PER_SOURCE = 5, SETUP_GLOBAL = 20, FAILURES_PER_SOURCE = 5, FAILURES_GLOBAL = 20;
     static final long LIMIT_WINDOW_MS = 60_000;
+    // mauvais codes depuis le dernier appairage reussi (prefs, survit au redemarrage) : au-dela, plus d'appairage
+    // jusqu'a forgetClients() ou un appairage reussi. 4 chiffres : 100 essais = 1 % de chances, comme HAP.
+    static final int PAIR_FAILURE_LIMIT = 100;
     static final int MAX_PAYLOAD = 1 << 20;   // framing.py : 1 Mio + 16 octets d'etiquette AEAD
     static final int MAX_CLIENTS = 8;
     static final int RTI_MAX_TEXT = 1024;
@@ -312,7 +315,8 @@ final class Companion {
             }
         }
         clients.put(id, ltpk);
-        prefs.edit().putString("client." + id, hex(ltpk)).putLong("seen." + id, System.currentTimeMillis()).commit();
+        prefs.edit().putString("client." + id, hex(ltpk)).putLong("seen." + id, System.currentTimeMillis())
+                .remove("pairFailures").commit();
         Log.i(TAG, "iPhone appaire (" + clients.size() + " en tout)");
     }
 
@@ -320,6 +324,14 @@ final class Companion {
 
     static synchronized void clientSeen(String id) {
         if (prefs != null && clients.containsKey(id)) prefs.edit().putLong("seen." + id, System.currentTimeMillis()).apply();
+    }
+
+    static synchronized boolean pairLocked() {
+        return prefs != null && prefs.getInt("pairFailures", 0) >= PAIR_FAILURE_LIMIT;
+    }
+
+    static synchronized void pairFailed() {
+        if (prefs != null) prefs.edit().putInt("pairFailures", prefs.getInt("pairFailures", 0) + 1).commit();
     }
 
     /** Oublie un seul iPhone (identifiant de pair-setup M5) ; false s'il n'etait pas appaire. */
@@ -335,6 +347,7 @@ final class Companion {
         if (prefs == null) return;
         SharedPreferences.Editor e = prefs.edit();
         for (String k : clients.keySet()) e.remove("client." + k).remove("seen." + k);
+        e.remove("pairFailures");   // rearme l'appairage bloque par PAIR_FAILURE_LIMIT
         e.commit();
         clients.clear();
         Log.i(TAG, "iPhones appaires oublies");
@@ -415,6 +428,7 @@ final class Companion {
             Log.i(TAG, "connexion de " + source);
             try {
                 sock.setTcpNoDelay(true);
+                sock.setKeepAlive(true);   // iPhone parti sans FIN : la connexion finit par tomber et libere sa place
                 in = new BufferedInputStream(sock.getInputStream());
                 out = sock.getOutputStream();
                 deadline = now() + AUTH_TIMEOUT_MS;
@@ -466,6 +480,7 @@ final class Companion {
             }
             try { sock.close(); } catch (IOException ignored) { }
             touch.stopRepeat();
+            releasePressed();
             clearSetup();
             synchronized (Companion.class) {
                 conns.remove(this);
@@ -742,6 +757,13 @@ final class Companion {
                 backoff(retry);
                 return false;
             }
+            if (pairLocked()) {
+                // ni code ni ecran allume : la TV ne repond plus aux demandes d'appairage
+                Log.w(TAG, "appairage refuse : " + PAIR_FAILURE_LIMIT + " mauvais codes, voir FORGET_IPHONES");
+                clearSetup();
+                setupError(2, Opack.Tlv.ERR_MAX_TRIES);
+                return false;
+            }
             if (srp != null) {
                 failures.record(source);
                 clearSetup();
@@ -784,6 +806,7 @@ final class Companion {
             } else {
                 Log.w(TAG, "appairage : mauvais code");
                 failures.record(source);
+                pairFailed();
                 clearSetup();
                 tlv = Opack.Tlv.write(Opack.Tlv.ERROR, new byte[]{Opack.Tlv.ERR_AUTHENTICATION}, Opack.Tlv.SEQ_NO, new byte[]{4});
             }
@@ -938,6 +961,7 @@ final class Companion {
                     // nouvelle session TV Remote : les actions en attente de la precedente sont abandonnees
                     touch.stopRepeat();
                     gen++;
+                    releasePressed();
                     Object c = m.containsKey("_c") ? m.get("_c") : Opack.map();
                     if (c instanceof Map) {
                         Object v = ((Map<?, ?>) c).get("ProtocolVersionKey");
@@ -953,6 +977,7 @@ final class Companion {
                 case "tvrcsessionstop":
                     touch.stopRepeat();
                     gen++;
+                    releasePressed();
                     respond(m, Opack.map());
                     break;
                 case "_interest": interest(m); break;
@@ -1065,6 +1090,19 @@ final class Companion {
         }
 
         void buttonClick(int code) { buttonEdge(code, true); buttonEdge(code, false); }
+
+        /**
+         * Connexion ou session finie doigt pose : le relachement n'arrivera jamais et act() abandonne ceux en file.
+         * Sans cela le demon repete la touche HOLD_MAX_MS (volume + jusqu'au maximum). Hors act : jamais abandonne.
+         */
+        void releasePressed() {
+            final ArrayList<Long> held;
+            synchronized (pressed) { held = new ArrayList<>(pressed); pressed.clear(); }
+            for (final Long code : held) {
+                if (code == RemoteActions.SIRI) continue;
+                post(new Runnable() { public void run() { RemoteActions.release((int) (long) code); } });
+            }
+        }
 
         void tap() {
             long t = now();
