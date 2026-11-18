@@ -37,11 +37,12 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
     SurfaceView view;
     SurfaceHolder holder;
     MediaPlayer player;
+    boolean prepared;   // MediaPlayer pret : avant, getDuration/seekTo/start renvoient l'erreur -38
     final Handler h = new Handler();
     final Runnable poll = new Runnable() {
         public void run() {
             MediaPlayer p = player;
-            if (p != null) {
+            if (p != null && prepared) {
                 try {
                     Mirror.Hls.position = p.getCurrentPosition() / 1000.0;
                     int d = p.getDuration();
@@ -137,7 +138,7 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     public boolean onKeyDown(int code, KeyEvent e) {
         MediaPlayer p = player;
-        if (p != null && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+        if (p != null && prepared && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
                 || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
             try { if (p.isPlaying()) p.pause(); else p.start(); } catch (Exception ignored) { }
             return true;
@@ -181,6 +182,7 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
             p.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
                 public void onPrepared(MediaPlayer mp) {
                     if (player != mp) return;
+                    prepared = true;
                     int d = mp.getDuration();
                     if (d > 0) Mirror.Hls.duration = d / 1000.0;
                     float s = Mirror.Hls.startAt;
@@ -195,6 +197,9 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
             p.setOnErrorListener(new MediaPlayer.OnErrorListener() {
                 public boolean onError(MediaPlayer mp, int what, int extra) {
                     Log.w(TAG, "HLS erreur " + what + "/" + extra);
+                    // -38 = appel dans le mauvais etat (avant onPrepared) : sans gravite. Le traiter comme une fin
+                    // de video faisait arreter la lecture par l'iPhone des la premiere seconde.
+                    if (what == -38) return true;
                     Mirror.Hls.finished = true;
                     return true;
                 }
@@ -210,18 +215,22 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
 
     void seekHls(float pos) {
         MediaPlayer p = player;
-        if (p != null) try { p.seekTo((int) (pos * 1000)); } catch (Exception ignored) { }
+        if (p == null) return;
+        if (!prepared) { Mirror.Hls.startAt = pos; return; }   // applique par onPrepared
+        try { p.seekTo((int) (pos * 1000)); } catch (Exception ignored) { }
     }
 
     void rateHls(float r) {
         MediaPlayer p = player;
         if (p == null) return;
+        if (!prepared) { Mirror.Hls.paused = r == 0f; return; }   // applique par onPrepared
         try { if (r == 0f) p.pause(); else p.start(); } catch (Exception ignored) { }
     }
 
     void releasePlayer() {
         MediaPlayer p = player;
         player = null;
+        prepared = false;
         if (p != null) try { p.release(); } catch (Exception ignored) { }
     }
 }
