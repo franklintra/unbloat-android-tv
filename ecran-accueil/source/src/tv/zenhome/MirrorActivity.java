@@ -52,17 +52,25 @@ public class MirrorActivity extends Activity implements SurfaceHolder.Callback {
         }
     };
 
+    /** Video ou recopie en cours : l'ecran doit montrer l'image (AudioOnly ne l'eteint pas). */
+    static volatile boolean picture;
+
     static void show(final Context c) {
-        Mirror.main.post(new Runnable() {
+        picture = true;
+        // TV en mode Audio seul (musique AirPlay ou Spotify juste avant) : retroeclairage coupe, on le rallume.
+        // Si une touche Retour a ete injectee, on attend qu'elle soit passee pour qu'elle ne ferme pas cette activite.
+        long delay = AudioOnly.showPicture(c) ? 800 : 0;
+        Mirror.main.postDelayed(new Runnable() {
             public void run() {
-                if (current != null && !current.isFinishing()) return;
+                if (!picture || current != null && !current.isFinishing()) return;
                 c.startActivity(new Intent(c, MirrorActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
             }
-        });
+        }, delay);
     }
 
     static void close() {
+        picture = false;
         Mirror.main.post(new Runnable() {
             public void run() { if (current != null) current.finish(); }
         });

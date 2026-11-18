@@ -43,14 +43,16 @@ final class AudioOnly {
 
     static final Handler h = new Handler(Looper.getMainLooper());
     static Context ctx;
-    static boolean armed;   // AirPlay vient de reveiller la TV : ecran a eteindre des qu'il s'allume
-    static boolean dark;    // retroeclairage coupe par nous, personne n'a encore touche la telecommande
+    static volatile boolean armed;   // AirPlay vient de reveiller la TV : ecran a eteindre des qu'il s'allume
+    static volatile boolean dark;    // retroeclairage coupe par nous, personne n'a encore touche la telecommande
+    static volatile boolean asked;   // menu Audio seul TCL deja demande (compte a rebours ou drapeau leve)
     static long lastOff = -AGAIN_MS;   // dernier SCREEN_OFF (elapsedRealtime)
 
     static final Runnable disarm = new Runnable() { public void run() { armed = false; } };
     static final Runnable goDark = new Runnable() {
         public void run() {
-            if (!dark) return;
+            if (!dark || MirrorActivity.picture) return;
+            asked = true;
             try {
                 ctx.startService(new Intent("com.tcl.settings.SHOW_WINDOW").setPackage("com.tcl.settings").putExtra("Type", "AudioOnly"));
             } catch (Exception e) { Log.w(TAG, "mode audio seul TCL", e); }
@@ -78,6 +80,7 @@ final class AudioOnly {
     /** AirPlay.wakeScreen, juste avant d'allumer la TV. */
     static void arm(Context c) {
         ctx = c.getApplicationContext();
+        if (MirrorActivity.picture) return;   // video ou recopie : on veut l'image
         h.post(new Runnable() { public void run() {
             armed = true;
             h.removeCallbacks(disarm);
@@ -92,7 +95,9 @@ final class AudioOnly {
         if (!armed) return;
         armed = false;
         h.removeCallbacks(disarm);
+        if (MirrorActivity.picture) return;
         dark = true;
+        asked = false;
         Log.i(TAG, "audio seul : l'ecran s'eteint dans 10 s, une touche le rallume");
         h.postDelayed(goDark, SETTLE_MS);   // apres la reprise TCL, qui fermerait le compte a rebours
     }
@@ -146,6 +151,30 @@ final class AudioOnly {
         Log.i(TAG, "audio seul : touche, ecran rallume");
     }
 
+    /**
+     * MirrorActivity.show (recopie d'ecran, video d'une appli) : il faut l'image. Si la TV est en Audio seul, on
+     * rallume le retroeclairage. Seul le systeme le peut (TTvFunctionManager.setPowerBacklight refuse une appli
+     * non systeme) ; TclPhoneWindowManager le fait pour toute touche recue en mode Audio seul, y compris une
+     * touche injectee : un Retour du service d'accessibilite suffit, et TCL le consomme. Pendant le compte a
+     * rebours (drapeau pas encore leve), ce Retour ferme le compte a rebours. Rend true si une touche a ete injectee.
+     */
+    static boolean showPicture(Context c) {
+        ctx = c.getApplicationContext();
+        armed = false;
+        h.removeCallbacks(disarm);
+        if (!dark) return false;
+        dark = false;
+        h.removeCallbacks(goDark);
+        h.removeCallbacks(sleep);
+        restoreTimeout(ctx);
+        if (!asked) { Log.i(TAG, "video : mode audio seul annule avant le compte a rebours"); return false; }
+        asked = false;
+        Keys k = Keys.self;
+        boolean ok = k != null && k.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+        Log.i(TAG, "video : sortie du mode audio seul TCL" + (ok ? "" : " impossible (service d'accessibilite absent)"));
+        return ok;
+    }
+
     static void sessionStarted() { h.removeCallbacks(sleep); if (ctx != null) restoreTimeout(ctx); }
     static void sessionEnded() { h.removeCallbacks(sleep); if (dark) h.postDelayed(sleep, GRACE_MS); }
 
@@ -157,7 +186,8 @@ final class AudioOnly {
     static final Runnable checkPlayback = new Runnable() {
         public void run() {
             AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-            boolean on = am.isMusicActive() && !Mirror.Music.active && !AirPlay.busy();
+            // le son de la recopie ou de la video AirPlay joue dans Zen Home : ce n'est pas la musique d'une appli
+            boolean on = am.isMusicActive() && !Mirror.Music.active && !AirPlay.busy() && !MirrorActivity.picture;
             if (on == appMusic) return;
             appMusic = on;
             if (on) {
