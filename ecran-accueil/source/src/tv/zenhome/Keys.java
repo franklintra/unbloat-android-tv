@@ -19,7 +19,8 @@ import android.view.accessibility.AccessibilityEvent;
  * La telecommande TCL envoie le code 4077, pas KEYCODE_SETTINGS. Les touches injectees par adb
  * ne passent pas par ce filtre : seule la vraie telecommande permet de tester.
  *
- * Le service tourne tant que la TV est allumee : il porte aussi le night shift (NightShift.apply chaque minute).
+ * Le service tourne tant que la TV est allumee : il porte aussi le night shift (NightShift.apply chaque minute)
+ * et le nettoyage des fenetres fantomes de com.tcl.settings (TclWindows.tick).
  * Il ecoute les changements de fenetre pour savoir quand on passe d'une appli a une entree TV/HDMI.
  * Il porte enfin la telecommande de l'iPhone (Companion.java, RemoteActions.java) : le focus des champs de saisie
  * ouvre le clavier de l'iPhone, et le texte tape y est ecrit (canRetrieveWindowContent, res/xml/keys.xml).
@@ -59,7 +60,7 @@ public class Keys extends AccessibilityService {
     };
 
     final Runnable tick = new Runnable() {
-        public void run() { NightShift.apply(Keys.this); h.postDelayed(this, TICK_MS); }
+        public void run() { NightShift.apply(Keys.this); TclWindows.tick(Keys.this); h.postDelayed(this, TICK_MS); }
     };
 
     // ecran rallume, heure ou fuseau change : on n'attend pas la minute suivante
